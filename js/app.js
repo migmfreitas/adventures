@@ -32,6 +32,8 @@ let pendingGpxText = null; // raw GPX text of the pending file
 (async () => {
   routes = await Store.loadIndex();
   render();
+  // Force Leaflet to recalculate map size after layout and data settle
+  setTimeout(() => map.invalidateSize(), 200);
 })();
 
 // ── Render ────────────────────────────────────────────────────────────────────
