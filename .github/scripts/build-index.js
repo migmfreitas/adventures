@@ -185,14 +185,6 @@ async function main() {
   }
   const existingMap = Object.fromEntries(existing.map(r => [r.id, r]));
 
-  // Install xmldom if not present (GitHub Actions fresh environment)
-  try {
-    require('@xmldom/xmldom');
-  } catch {
-    console.log('Installing @xmldom/xmldom...');
-    require('child_process').execSync('npm install @xmldom/xmldom', { stdio: 'inherit' });
-  }
-
   const gpxFiles = fs.readdirSync(GPX_DIR)
     .filter(f => f.toLowerCase().endsWith('.gpx'))
     .sort();
