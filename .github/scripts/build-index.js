@@ -134,7 +134,7 @@ function computeMetrics(points) {
     .filter((_, i) => i % step === 0 && points[i].ele !== null)
     .map((p, i) => ({ d: Math.round(i * step * distanceM / points.length), ele: Math.round(p.ele) }));
 
-  const simplifiedPath = simplify(points, 0.0001);
+  const simplifiedPath = simplify(points, 0.00001);
 
   return {
     distanceKm:    Math.round(distanceKm * 10) / 10,
