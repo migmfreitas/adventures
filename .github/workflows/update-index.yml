@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'data/gpx/**.gpx'
+  workflow_dispatch:
 
 jobs:
   update-index:
