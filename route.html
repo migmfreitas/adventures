@@ -229,9 +229,9 @@ function renderPage(route, points) {
 
   // ── Map ─────────────────────────────────────────────────────────────────────
   const routeMap = L.map('routeMap', { zoomControl: true });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
-    attribution: '© OpenStreetMap contributors © CARTO',
-    subdomains: 'abcd', maxZoom: 19,
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
   }).addTo(routeMap);
 
   // Use full GPX points if available, else fall back to simplified path from index
@@ -241,6 +241,7 @@ function renderPage(route, points) {
     const latlngs = mapPoints.map(p => [p.lat, p.lon]);
     const pl = L.polyline(latlngs, { color, weight: 4, opacity: 0.9 }).addTo(routeMap);
     routeMap.fitBounds(pl.getBounds(), { padding: [30, 30] });
+    setTimeout(() => routeMap.invalidateSize(), 200);
 
     const mkIcon = (fill, border) => L.divIcon({
       className: '',
