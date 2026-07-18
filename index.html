@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Adventure Log</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #181c27; --surface2: #1f2435;
+      --border: #2a3048; --text: #e2e6f0; --muted: #7a849e; --accent: #e07840;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; }
+
+    /* ── Header ── */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+      height: 56px; background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+    }
+    .logo { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px; letter-spacing: 0.04em; }
+    .logo span { color: var(--accent); }
+    .btn {
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500;
+      padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--text); cursor: pointer; transition: all .15s; letter-spacing: 0.03em;
+    }
+    .btn:hover { background: var(--border); }
+    .btn-accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-accent:hover { background: #c86830; }
+
+    /* ── Layout ── */
+    .layout { display: flex; height: calc(100vh - 56px); margin-top: 56px; }
+
+    /* ── Sidebar ── */
+    .sidebar { width: 320px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+    .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
+    .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+    .stat-card { background: var(--surface2); border-radius: 8px; padding: 10px 10px 8px; }
+    .stat-val { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 600; }
+    .stat-lbl { font-size: 10px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 2px; }
+    .filter-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pill { font-size: 11px; font-family: 'IBM Plex Mono', monospace; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; transition: all .15s; }
+    .pill.active { color: #fff; border-color: transparent; }
+    .pill[data-type="all"].active  { background: var(--muted); }
+    .pill[data-type="bike"].active { background: #e07840; }
+    .pill[data-type="hike"].active { background: #52c97a; }
+    .pill[data-type="kayak"].active{ background: #4a9eff; }
+    .pill[data-type="run"].active  { background: #f5c842; }
+    .pill[data-type="other"].active{ background: #b48aff; }
+
+    .route-list { flex: 1; overflow-y: auto; padding: 8px; }
+    .route-list::-webkit-scrollbar { width: 4px; }
+    .route-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .route-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; transition: background .1s; border: 1px solid transparent; }
+    .route-item:hover { background: var(--surface2); }
+    .route-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .route-info { flex: 1; min-width: 0; }
+    .route-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .route-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .route-arrow { color: var(--muted); font-size: 12px; }
+
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 12px; text-align: center; padding: 32px 20px; color: var(--muted); }
+    .empty-icon { font-size: 36px; opacity: .5; }
+    .empty-state p { font-size: 13px; line-height: 1.6; }
+    .empty-state strong { color: var(--text); }
+    .empty-state code { font-family: 'IBM Plex Mono', monospace; font-size: 11px; background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
+
+    /* ── Map ── */
+    #map { flex: 1; }
+
+    /* Drop overlay */
+    .drop-overlay { display: none; position: fixed; inset: 56px 0 0 0; z-index: 900; background: rgba(15,17,23,.85); backdrop-filter: blur(4px); align-items: center; justify-content: center; flex-direction: column; gap: 16px; border: 3px dashed var(--accent); pointer-events: none; }
+    .drop-overlay.active { display: flex; }
+    .drop-icon { font-size: 48px; }
+    .drop-overlay p { font-size: 18px; font-weight: 500; }
+
+    /* ── Modals shared ── */
+    .modal-backdrop { display: none; position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); align-items: center; justify-content: center; }
+    .modal-backdrop.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: 460px; max-width: calc(100vw - 32px); }
+    .modal h2 { font-size: 16px; margin-bottom: 6px; }
+    .modal p.sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+    .modal label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; font-family: 'IBM Plex Mono', monospace; }
+    .modal input[type=text], .modal select { width: 100%; padding: 9px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; font-family: 'Inter', sans-serif; margin-bottom: 16px; }
+    .modal input[type=text]:focus, .modal select:focus { outline: none; border-color: var(--accent); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+    .drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 16px; transition: all .15s; }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); color: var(--text); }
+    .drop-zone input { display: none; }
+
+    /* ── Commit modal specifics ── */
+    .commit-files { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
+    .commit-file { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .commit-file-path { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--accent); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .commit-file-desc { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .btn-dl { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; white-space: nowrap; transition: all .15s; flex-shrink: 0; }
+    .btn-dl:hover { background: var(--accent); color: #fff; }
+
+    .commit-steps { margin: 0 0 20px; }
+    .commit-steps li { font-size: 13px; color: var(--muted); padding: 5px 0; padding-left: 20px; position: relative; line-height: 1.5; }
+    .commit-steps li::before { content: counter(step); counter-increment: step; position: absolute; left: 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--accent); font-weight: 600; top: 6px; }
+    .commit-steps { counter-reset: step; list-style: none; }
+    .commit-steps strong { color: var(--text); }
+
+    .code-block { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a8c7ff; white-space: pre; overflow-x: auto; margin-top: 6px; line-height: 1.7; }
+
+    .divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+    /* Leaflet overrides */
+    .leaflet-container { background: #0f1117 !important; }
+    .leaflet-popup-content-wrapper { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 10px !important; color: var(--text) !important; box-shadow: 0 4px 24px rgba(0,0,0,.4) !important; }
+    .leaflet-popup-tip { background: var(--surface) !important; }
+    .leaflet-popup-content { margin: 12px 16px !important; font-family: 'Inter', sans-serif !important; }
+    .popup-name { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+    .popup-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); line-height: 1.8; }
+    .popup-link { display: inline-block; margin-top: 10px; font-size: 12px; font-family: 'IBM Plex Mono', monospace; color: var(--accent); text-decoration: none; }
+    .popup-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">adventure<span>.</span>log</div>
+  <button class="btn btn-accent" id="importBtn">⌃ Add Route</button>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-val" id="statRoutes">—</div><div class="stat-lbl">Routes</div></div>
+        <div class="stat-card"><div class="stat-val" id="statKm">—</div><div class="stat-lbl">km total</div></div>
+        <div class="stat-card"><div class="stat-val" id="statElev">—</div><div class="stat-lbl">m climbed</div></div>
+      </div>
+      <div class="filter-row" id="filterRow">
+        <button class="pill active" data-type="all">All</button>
+        <button class="pill" data-type="bike">🚴</button>
+        <button class="pill" data-type="hike">🥾</button>
+        <button class="pill" data-type="kayak">🛶</button>
+        <button class="pill" data-type="run">🏃</button>
+        <button class="pill" data-type="other">✦</button>
+      </div>
+    </div>
+    <div class="route-list" id="routeList">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🗺</div>
+        <p>No adventures yet.<br/><br/>
+        Click <strong>Add Route</strong> to import a GPX file.<br/>
+        The app will give you two files to commit to your repo — then they appear here.</p>
+      </div>
+    </div>
+  </aside>
+  <div id="map"></div>
+</div>
+
+<!-- Drop overlay -->
+<div class="drop-overlay" id="dropOverlay">
+  <div class="drop-icon">📍</div>
+  <p>Drop GPX file to add a route</p>
+</div>
+
+<!-- ── Step 1: Import modal ── -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h2>Add a new route</h2>
+    <p class="sub">Pick a GPX file, give it a name and type. The next step will give you the files to commit.</p>
+
+    <div class="drop-zone" id="modalDropZone">
+      <input type="file" id="fileInput" accept=".gpx" />
+      <div id="dropZoneLabel">📂 Drop GPX here or <u>browse</u></div>
+    </div>
+
+    <label>Route Name</label>
+    <input type="text" id="routeName" placeholder="e.g. Sintra coastal loop" />
+
+    <label>Activity</label>
+    <select id="activityType">
+      <option value="bike">🚴 Bike</option>
+      <option value="hike">🥾 Hike</option>
+      <option value="kayak">🛶 Kayak</option>
+      <option value="run">🏃 Run</option>
+      <option value="other">✦ Other</option>
+    </select>
+
+    <div class="modal-actions">
+      <button class="btn" id="cancelBtn">Cancel</button>
+      <button class="btn btn-accent" id="confirmBtn">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Step 2: Commit modal ── -->
+<div class="modal-backdrop" id="commitModalBackdrop">
+  <div class="modal">
+    <h2>Commit these 2 files</h2>
+    <p class="sub">Download both files and add them to your repo at the paths shown. Once pushed, the route appears on the live site.</p>
+
+    <div class="commit-files">
+      <div class="commit-file">
+        <div>
+          <div class="commit-file-path" id="commitGpxPath"></div>
+          <div class="commit-file-desc">Your GPX track (unchanged)</div>
+        </div>
+        <button class="btn-dl" id="dlGpx">↓ Download</button>
+      </div>
+      <div class="commit-file">
+        <div>
+          <div class="commit-file-path" id="commitIndexPath"></div>
+          <div class="commit-file-desc">Updated route manifest (replaces existing)</div>
+        </div>
+        <button class="btn-dl" id="dlIndex">↓ Download</button>
+      </div>
+    </div>
+
+    <ol class="commit-steps">
+      <li>Download both files above</li>
+      <li>Place them in your repo at the paths shown — <strong>replace</strong> <code>data/index.json</code> with the new version</li>
+      <li>Commit and push:</li>
+    </ol>
+
+    <div class="code-block" id="commitSnippet"></div>
+
+    <div class="divider"></div>
+    <div class="modal-actions">
+      <button class="btn btn-accent" id="commitCloseBtn">Done</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/gpx-parser.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Route — Adventure Log</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #181c27; --surface2: #1f2435;
+      --border: #2a3048; --text: #e2e6f0; --muted: #7a849e; --accent: #e07840;
+    }
+    html, body { min-height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; }
+
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      height: 56px; display: flex; align-items: center; padding: 0 20px; gap: 16px;
+    }
+    .back-btn {
+      font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted);
+      text-decoration: none; display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--surface2); transition: all .15s; white-space: nowrap;
+    }
+    .back-btn:hover { color: var(--text); }
+    .header-title { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .header-type { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 3px 10px; border-radius: 20px; margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+    .dl-btn {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 6px 12px;
+      border-radius: 6px; border: 1px solid var(--border); background: var(--surface2);
+      color: var(--muted); cursor: pointer; transition: all .15s; white-space: nowrap; flex-shrink: 0;
+    }
+    .dl-btn:hover { color: var(--text); border-color: var(--muted); }
+
+    .page { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
+
+    /* Loading / error states */
+    .state-msg { padding: 80px 20px; text-align: center; font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-size: 13px; }
+    .state-msg a { color: var(--accent); text-decoration: none; }
+
+    .route-hero { margin-bottom: 28px; }
+    .route-title { font-size: 28px; font-weight: 600; margin-bottom: 6px; }
+    .route-subtitle { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); }
+
+    /* ── Metrics grid ── */
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 28px; }
+    .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .metric-card.accent { border-color: var(--route-color, var(--accent)); }
+    .metric-val { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 600; white-space: nowrap; }
+    .metric-unit { font-size: 13px; color: var(--muted); font-weight: 400; }
+    .metric-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+
+    /* ── Map ── */
+    .section-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; }
+    #routeMap { height: 460px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 28px; overflow: hidden; }
+
+    /* ── Elevation profile ── */
+    .elev-container { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 28px; }
+    .elev-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .elev-title { font-size: 14px; font-weight: 500; }
+    .elev-stats { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); display: flex; gap: 16px; flex-wrap: wrap; }
+    #elevCanvas { width: 100%; height: 160px; display: block; cursor: crosshair; }
+    .elev-tooltip { position: absolute; pointer-events: none; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text); display: none; white-space: nowrap; }
+
+    /* ── Details table ── */
+    .details-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 28px; }
+    .details-card table { width: 100%; border-collapse: collapse; }
+    .details-card tr { border-bottom: 1px solid var(--border); }
+    .details-card tr:last-child { border-bottom: none; }
+    .details-card td { padding: 12px 16px; font-size: 13px; }
+    .details-card td:first-child { color: var(--muted); width: 40%; }
+    .details-card td:last-child { font-family: 'IBM Plex Mono', monospace; font-weight: 500; }
+
+    /* Leaflet overrides */
+    .leaflet-container { background: #0f1117 !important; }
+
+    @media (max-width: 600px) {
+      .route-title { font-size: 20px; }
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+      #routeMap { height: 300px; }
+      .elev-stats { gap: 8px; font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="back-btn" href="index.html">← Back</a>
+  <span class="header-title" id="headerTitle"></span>
+  <span class="header-type" id="headerType"></span>
+  <button class="dl-btn" id="dlGpxBtn" style="display:none">↓ GPX</button>
+</header>
+
+<div id="stateMsg" class="state-msg">Loading…</div>
+
+<div id="pageContent" style="display:none">
+  <div class="page">
+    <div class="route-hero">
+      <div class="route-title" id="routeTitle"></div>
+      <div class="route-subtitle" id="routeSubtitle"></div>
+    </div>
+
+    <div class="metrics-grid" id="metricsGrid"></div>
+
+    <div class="section-label">Route Map</div>
+    <div id="routeMap"></div>
+
+    <div class="elev-container" id="elevSection" style="display:none">
+      <div class="elev-header">
+        <div class="elev-title">Elevation Profile</div>
+        <div class="elev-stats" id="elevStats"></div>
+      </div>
+      <div style="position:relative">
+        <canvas id="elevCanvas"></canvas>
+        <div class="elev-tooltip" id="elevTooltip"></div>
+      </div>
+    </div>
+
+    <div class="section-label">Details</div>
+    <div class="details-card">
+      <table id="detailsTable"></table>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/gpx-parser.js"></script>
+<script src="js/store.js"></script>
+<script>
+const ACTIVITY_COLORS = { bike:'#e07840', hike:'#52c97a', kayak:'#4a9eff', run:'#f5c842', other:'#b48aff' };
+const ACTIVITY_EMOJI  = { bike:'🚴', hike:'🥾', kayak:'🛶', run:'🏃', other:'✦' };
+
+function fmt(n, dec=1) { return n == null ? '—' : Number(n).toFixed(dec); }
+function fmtTime(secs) {
+  if (!secs) return '—';
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-GB', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+}
+function fmtSpeed(km, secs) {
+  if (!km || !secs) return '—';
+  return fmt(km / (secs / 3600)) + ' km/h';
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function showError(msg) {
+  document.getElementById('stateMsg').innerHTML = msg;
+}
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+(async () => {
+  const id = new URLSearchParams(location.search).get('id');
+  if (!id) { showError('No route ID. <a href="index.html">← Back</a>'); return; }
+
+  // 1. Load index to get metadata (cached after first load on this page)
+  const index = await Store.loadIndex();
+  const route = index.find(r => r.id === id);
+  if (!route) { showError('Route not found. <a href="index.html">← Back</a>'); return; }
+
+  // 2. Fetch full GPX for the detail map
+  let points = [];
+  try {
+    const gpxText = await Store.loadGPX(id);
+    const parsed = GPXParser.parse(gpxText, route.name);
+    points = parsed.points;
+
+    // Wire up GPX download button
+    const dlBtn = document.getElementById('dlGpxBtn');
+    dlBtn.style.display = '';
+    dlBtn.onclick = () => {
+      const blob = new Blob([gpxText], { type: 'application/gpx+xml' });
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${id}.gpx` });
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    };
+  } catch (e) {
+    console.warn('Could not load GPX file:', e.message);
+    // Non-fatal — we can still show metrics from the index
+  }
+
+  // 3. Render
+  renderPage(route, points);
+})();
+
+function renderPage(route, points) {
+  document.getElementById('stateMsg').style.display = 'none';
+  document.getElementById('pageContent').style.display = '';
+
+  const m = route.metrics;
+  const color = ACTIVITY_COLORS[route.type] || ACTIVITY_COLORS.other;
+  document.documentElement.style.setProperty('--route-color', color);
+
+  document.title = route.name + ' — Adventure Log';
+  document.getElementById('headerTitle').textContent = route.name;
+  const typeEl = document.getElementById('headerType');
+  typeEl.textContent = ACTIVITY_EMOJI[route.type] + ' ' + route.type;
+  typeEl.style.background = color + '22';
+  typeEl.style.color = color;
+
+  document.getElementById('routeTitle').textContent = route.name;
+  const dateStr = m?.startTime ? fmtDate(m.startTime) : '';
+  const ptStr = m?.pointCount ? m.pointCount.toLocaleString() + ' GPS points' : '';
+  document.getElementById('routeSubtitle').textContent = [dateStr, ptStr].filter(Boolean).join(' · ');
+
+  // ── Metric cards ────────────────────────────────────────────────────────────
+  const cards = [
+    { val: fmt(m?.distanceKm), unit: 'km', lbl: 'Distance', accent: true },
+    { val: m?.elevGain != null ? m.elevGain.toLocaleString() : '—', unit: 'm', lbl: 'Elevation Gain' },
+    { val: m?.elevLoss != null ? m.elevLoss.toLocaleString() : '—', unit: 'm', lbl: 'Elevation Loss' },
+    { val: fmtTime(m?.movingTime), unit: '', lbl: 'Moving Time' },
+    { val: fmtTime(m?.totalTime),  unit: '', lbl: 'Total Time' },
+    { val: fmtSpeed(m?.distanceKm, m?.movingTime), unit: '', lbl: 'Avg Speed' },
+    { val: m?.maxEle != null ? m.maxEle.toLocaleString() : '—', unit: 'm', lbl: 'Max Elevation' },
+    { val: m?.minEle != null ? m.minEle.toLocaleString() : '—', unit: 'm', lbl: 'Min Elevation' },
+    { val: m?.avgHr || '—', unit: m?.avgHr ? 'bpm' : '', lbl: 'Avg Heart Rate' },
+  ];
+  const grid = document.getElementById('metricsGrid');
+  cards.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'metric-card' + (c.accent ? ' accent' : '');
+    card.innerHTML = `<div class="metric-val">${c.val}<span class="metric-unit">${c.unit ? ' ' + c.unit : ''}</span></div><div class="metric-lbl">${c.lbl}</div>`;
+    grid.appendChild(card);
+  });
+
+  // ── Map ─────────────────────────────────────────────────────────────────────
+  const routeMap = L.map('routeMap', { zoomControl: true });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap contributors © CARTO',
+    subdomains: 'abcd', maxZoom: 19,
+  }).addTo(routeMap);
+
+  // Use full GPX points if available, else fall back to simplified path from index
+  const mapPoints = points.length >= 2 ? points : (m?.simplifiedPath || []);
+
+  if (mapPoints.length >= 2) {
+    const latlngs = mapPoints.map(p => [p.lat, p.lon]);
+    const pl = L.polyline(latlngs, { color, weight: 4, opacity: 0.9 }).addTo(routeMap);
+    routeMap.fitBounds(pl.getBounds(), { padding: [30, 30] });
+
+    const mkIcon = (fill, border) => L.divIcon({
+      className: '',
+      html: `<div style="width:12px;height:12px;background:${fill};border:2px solid ${border};border-radius:50%;box-shadow:0 0 6px ${fill}88"></div>`,
+      iconSize: [12,12], iconAnchor: [6,6],
+    });
+    L.marker(latlngs[0], { icon: mkIcon(color, '#fff') }).addTo(routeMap).bindTooltip('Start');
+    L.marker(latlngs[latlngs.length-1], { icon: mkIcon('#fff', color) }).addTo(routeMap).bindTooltip('End');
+  } else {
+    document.getElementById('routeMap').innerHTML =
+      '<div style="height:460px;display:flex;align-items:center;justify-content:center;color:#7a849e;font-family:IBM Plex Mono,monospace">No GPS points to display</div>';
+  }
+
+  // ── Elevation Profile ────────────────────────────────────────────────────────
+  const profile = m?.elevProfile;
+  if (profile && profile.length > 2) {
+    document.getElementById('elevSection').style.display = 'block';
+    const minE = Math.min(...profile.map(p => p.ele));
+    const maxE = Math.max(...profile.map(p => p.ele));
+    const maxD = profile[profile.length - 1].d;
+
+    if (m.elevGain) document.getElementById('elevStats').innerHTML =
+      `<span>↑ ${m.elevGain}m gain</span><span>↓ ${m.elevLoss}m loss</span><span>${m.minEle}–${m.maxEle}m range</span>`;
+
+    const canvas = document.getElementById('elevCanvas');
+    function drawProfile() {
+      const W = canvas.offsetWidth, H = canvas.offsetHeight;
+      canvas.width = W * devicePixelRatio; canvas.height = H * devicePixelRatio;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(devicePixelRatio, devicePixelRatio);
+      const PAD = { l:44, r:10, t:10, b:28 };
+      const gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
+      const eleRange = (maxE - minE) || 1;
+      const xOf = d => PAD.l + (d / maxD) * gW;
+      const yOf = e => PAD.t + gH - ((e - minE) / eleRange) * gH;
+
+      // Grid
+      ctx.strokeStyle = '#2a3048'; ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const e = minE + eleRange * i / 4, y = yOf(e);
+        ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + gW, y); ctx.stroke();
+        ctx.fillStyle = '#7a849e'; ctx.font = '10px IBM Plex Mono';
+        ctx.fillText(Math.round(e) + 'm', 2, y + 4);
+      }
+
+      // Fill
+      const grad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + gH);
+      grad.addColorStop(0, color + '55'); grad.addColorStop(1, color + '05');
+      ctx.beginPath();
+      ctx.moveTo(xOf(profile[0].d), yOf(profile[0].ele));
+      profile.forEach(p => ctx.lineTo(xOf(p.d), yOf(p.ele)));
+      ctx.lineTo(xOf(maxD), PAD.t + gH); ctx.lineTo(PAD.l, PAD.t + gH);
+      ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
+
+      // Line
+      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+      profile.forEach((p, i) => i === 0 ? ctx.moveTo(xOf(p.d), yOf(p.ele)) : ctx.lineTo(xOf(p.d), yOf(p.ele)));
+      ctx.stroke();
+
+      // X labels
+      const xTicks = Math.min(6, Math.floor(gW / 80));
+      ctx.fillStyle = '#7a849e'; ctx.font = '10px IBM Plex Mono';
+      for (let i = 0; i <= xTicks; i++) {
+        const d = maxD * i / xTicks;
+        ctx.fillText((d/1000).toFixed(1) + 'km', xOf(d) - 14, H - 6);
+      }
+    }
+    drawProfile();
+    window.addEventListener('resize', drawProfile);
+
+    const tooltip = document.getElementById('elevTooltip');
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      const xRel = e.clientX - rect.left;
+      const gW = rect.width - 44 - 10;
+      if (xRel < 44 || xRel > 44 + gW) { tooltip.style.display = 'none'; return; }
+      const dAt = ((xRel - 44) / gW) * maxD;
+      let best = profile[0];
+      for (const p of profile) if (Math.abs(p.d - dAt) < Math.abs(best.d - dAt)) best = p;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (xRel + 10) + 'px';
+      tooltip.style.top  = (e.clientY - rect.top - 30) + 'px';
+      tooltip.textContent = `${(best.d/1000).toFixed(2)} km · ${best.ele} m`;
+    });
+    canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+  }
+
+  // ── Details table ────────────────────────────────────────────────────────────
+  const rows = [
+    ['Date',           fmtDate(m?.startTime)],
+    ['Activity',       ACTIVITY_EMOJI[route.type] + ' ' + route.type],
+    ['Distance',       fmt(m?.distanceKm) + ' km'],
+    ['Total Time',     fmtTime(m?.totalTime)],
+    ['Moving Time',    fmtTime(m?.movingTime)],
+    ['Average Speed',  fmtSpeed(m?.distanceKm, m?.movingTime)],
+    ['Elevation Gain', m?.elevGain != null ? m.elevGain.toLocaleString() + ' m' : '—'],
+    ['Elevation Loss', m?.elevLoss != null ? m.elevLoss.toLocaleString() + ' m' : '—'],
+    ['Max Elevation',  m?.maxEle  != null ? m.maxEle.toLocaleString()  + ' m' : '—'],
+    ['Min Elevation',  m?.minEle  != null ? m.minEle.toLocaleString()  + ' m' : '—'],
+    ['Avg Heart Rate', m?.avgHr ? m.avgHr + ' bpm' : '—'],
+    ['GPS Points',     m?.pointCount ? m.pointCount.toLocaleString() : '—'],
+    ['GPX File',       `data/gpx/${route.id}.gpx`],
+  ];
+  const table = document.getElementById('detailsTable');
+  rows.forEach(([lbl, val]) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${esc(lbl)}</td><td>${esc(String(val))}</td>`;
+    table.appendChild(tr);
+  });
+}
+</script>
+</body>
+</html>
