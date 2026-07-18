@@ -14,9 +14,9 @@ const ACTIVITY_EMOJI = { bike:'🚴', hike:'🥾', kayak:'🛶', run:'🏃', oth
 // ── Map init ──────────────────────────────────────────────────────────────────
 const map = L.map('map', { center: [39.5, -8.0], zoom: 6, zoomControl: false });
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
-  attribution: '© OpenStreetMap contributors © CARTO',
-  subdomains: 'abcd', maxZoom: 19,
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  maxZoom: 19,
 }).addTo(map);
 
 L.control.zoom({ position: 'bottomright' }).addTo(map);
