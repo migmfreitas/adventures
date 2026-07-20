@@ -88,28 +88,12 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-function smoothedElevArray(points, windowSize = 3) {
-  // Returns a plain number[] of smoothed elevations, parallel to points[]
-  const elev = points.map(p => p.ele);
-  return elev.map((e, i) => {
-    if (e === null) return null;
-    const half = Math.floor(windowSize / 2);
-    const slice = elev
-      .slice(Math.max(0, i - half), Math.min(elev.length, i + half + 1))
-      .filter(v => v !== null);
-    return slice.reduce((s, v) => s + v, 0) / slice.length;
-  });
-}
-
 function computeMetrics(points) {
   let distanceM = 0, elevGain = 0, elevLoss = 0;
   let minEle = Infinity, maxEle = -Infinity;
   let movingMs = 0, hrSum = 0, hrCount = 0;
   let minLat = Infinity, maxLat = -Infinity;
   let minLon = Infinity, maxLon = -Infinity;
-
-  // Smooth elevations before computing gain/loss to eliminate GPS noise
-  const smoothedElev = smoothedElevArray(points);
 
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
@@ -128,13 +112,10 @@ function computeMetrics(points) {
     const d = haversine(prev.lat, prev.lon, p.lat, p.lon);
     distanceM += d;
 
-    // Use smoothed elevation — sum ALL positive/negative changes
-    const se  = smoothedElev[i];
-    const sep = smoothedElev[i-1];
-    if (se !== null && sep !== null) {
-      const dEle = se - sep;
-      if (dEle > 0.5)       elevGain += dEle;
-      else if (dEle < -0.5) elevLoss += Math.abs(dEle);
+    if (p.ele !== null && prev.ele !== null) {
+      const dEle = p.ele - prev.ele;
+      if (dEle > 0) elevGain += dEle;
+      else          elevLoss += Math.abs(dEle);
     }
 
     if (p.time && prev.time) {
