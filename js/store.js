@@ -27,6 +27,17 @@ const Store = {
     }
   },
 
+  /** Load groups from data/groups.json (returns [] if missing) */
+  async loadGroups() {
+    try {
+      const res = await fetch('data/groups.json?_=' + Date.now());
+      if (!res.ok) return [];
+      return await res.json();
+    } catch (e) {
+      return [];
+    }
+  },
+
   /** Fetch the full GPX text for a route by id */
   async loadGPX(id) {
     const res = await fetch(`data/gpx/${id}.gpx`);
