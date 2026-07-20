@@ -1,40 +1,74 @@
 /**
- * Adventure Log — Main App (file-based, GitHub Pages)
+ * Adventure Log — Main App (with groups)
  */
 
 const ACTIVITY_COLORS = {
-  bike:  '#e07840',
-  hike:  '#52c97a',
-  kayak: '#4a9eff',
-  run:   '#f5c842',
-  other: '#b48aff',
+  bike:  '#e07840', hike:  '#52c97a',
+  kayak: '#4a9eff', run:   '#f5c842', other: '#b48aff',
 };
 const ACTIVITY_EMOJI = { bike:'🚴', hike:'🥾', kayak:'🛶', run:'🏃', other:'✦' };
 
 // ── Map init ──────────────────────────────────────────────────────────────────
-const map = L.map('map', { center: [39.5, -8.0], zoom: 6, zoomControl: false });
-
+const map = L.map('map', { center:[39.5,-8.0], zoom:6, zoomControl:false });
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   maxZoom: 19,
 }).addTo(map);
-
-L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.control.zoom({ position:'bottomright' }).addTo(map);
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let routes = [];
+let routes      = [];
+let groups      = [];
 let activeFilter = 'all';
-let polylines = {};
-let pendingParsed = null;  // parsed GPX waiting for modal confirm
-let pendingGpxText = null; // raw GPX text of the pending file
+let openGroupId  = null;   // currently expanded group (or null = all)
+let polylines    = {};     // id → L.Polyline
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 (async () => {
-  routes = await Store.loadIndex();
+  [routes, groups] = await Promise.all([Store.loadIndex(), Store.loadGroups()]);
   render();
-  // Force Leaflet to recalculate map size after layout and data settle
   setTimeout(() => map.invalidateSize(), 200);
 })();
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtTime(secs) {
+  if (!secs) return '—';
+  const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+function fmtKm(km) {
+  return km >= 1000 ? (km/1000).toFixed(1)+'k' : Math.round(km)+'';
+}
+
+// Which routes belong to a group (by id)
+function groupRouteIds(group) {
+  return new Set(group.routes || []);
+}
+
+// Routes that are in any group
+function allGroupedIds() {
+  const s = new Set();
+  groups.forEach(g => g.routes?.forEach(id => s.add(id)));
+  return s;
+}
+
+// Compute aggregate stats for a group
+function groupStats(group) {
+  const ids = groupRouteIds(group);
+  const members = routes.filter(r => ids.has(r.id));
+  const km      = members.reduce((s,r) => s+(r.metrics?.distanceKm||0), 0);
+  const gain    = members.reduce((s,r) => s+(r.metrics?.elevGain||0), 0);
+  const moving  = members.reduce((s,r) => s+(r.metrics?.movingTime||0), 0);
+  return { km: Math.round(km*10)/10, gain, moving, count: members.length };
+}
+
+function filteredRoutes() {
+  if (activeFilter === 'all') return routes;
+  return routes.filter(r => r.type === activeFilter);
+}
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
@@ -44,38 +78,125 @@ function render() {
 }
 
 function renderSidebar() {
-  const list = document.getElementById('routeList');
+  const list  = document.getElementById('routeList');
   const empty = document.getElementById('emptyState');
+  [...list.querySelectorAll('.route-item,.group-item,.back-to-all')].forEach(el => el.remove());
+
   const filtered = filteredRoutes();
-
-  [...list.querySelectorAll('.route-item')].forEach(el => el.remove());
-
-  if (filtered.length === 0) { empty.style.display = 'flex'; return; }
+  if (filtered.length === 0) { empty.style.display='flex'; return; }
   empty.style.display = 'none';
 
-  filtered.forEach(route => {
-    const item = document.createElement('div');
-    item.className = 'route-item';
-    item.dataset.id = route.id;
+  if (openGroupId) {
+    // ── Open group view ───────────────────────────────────────────────────────
+    const group = groups.find(g => g.id === openGroupId);
+    const ids   = groupRouteIds(group);
+    const stats = groupStats(group);
+    const members = filtered.filter(r => ids.has(r.id));
 
-    const color = ACTIVITY_COLORS[route.type] || ACTIVITY_COLORS.other;
-    const km = route.metrics?.distanceKm ?? '?';
-    const gain = route.metrics?.elevGain ?? null;
-    const date = route.metrics?.startTime
-      ? new Date(route.metrics.startTime).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })
-      : '';
+    // Back button
+    const back = document.createElement('div');
+    back.className = 'back-to-all visible';
+    back.innerHTML = '← All adventures';
+    back.addEventListener('click', () => { openGroupId = null; render(); fitAllRoutes(); });
+    list.appendChild(back);
 
-    item.innerHTML = `
-      <div class="route-dot" style="background:${color}"></div>
-      <div class="route-info">
-        <div class="route-name">${esc(route.name)}</div>
-        <div class="route-meta">${km} km${gain ? ' · ↑' + gain + 'm' : ''}${date ? ' · ' + date : ''}</div>
+    // Group header (expanded, non-interactive summary)
+    const header = document.createElement('div');
+    header.className = 'group-item';
+    header.innerHTML = `
+      <div class="group-header open" style="cursor:default">
+        <span class="group-icon">📁</span>
+        <div class="group-info">
+          <div class="group-name">${esc(group.name)}</div>
+          <div class="group-meta">${stats.count} routes</div>
+        </div>
       </div>
-      <span class="route-arrow">›</span>
+      <div class="group-body open">
+        ${group.description ? `<div class="group-desc">${esc(group.description)}</div>` : ''}
+        <div class="group-stats">
+          <div class="group-stat"><div class="group-stat-val">${fmtKm(stats.km)}</div><div class="group-stat-lbl">km total</div></div>
+          <div class="group-stat"><div class="group-stat-val">${fmtTime(stats.moving)}</div><div class="group-stat-lbl">moving time</div></div>
+          <div class="group-stat"><div class="group-stat-val">${stats.gain >= 1000 ? (stats.gain/1000).toFixed(1)+'k' : stats.gain}</div><div class="group-stat-lbl">m ascent</div></div>
+        </div>
+        <div class="group-routes" id="groupRoutesList"></div>
+      </div>
     `;
-    item.addEventListener('click', () => openRoute(route.id));
-    list.appendChild(item);
+    list.appendChild(header);
+    const routesContainer = header.querySelector('#groupRoutesList');
+    members.forEach(r => routesContainer.appendChild(makeRouteItem(r)));
+
+  } else {
+    // ── Default view: groups + ungrouped ─────────────────────────────────────
+    const groupedIds = allGroupedIds();
+
+    // Render groups first
+    groups.forEach(group => {
+      const ids     = groupRouteIds(group);
+      const members = filtered.filter(r => ids.has(r.id));
+      if (members.length === 0) return; // skip empty groups under current filter
+      const stats = groupStats(group);
+      const el = makeGroupItem(group, members, stats);
+      list.appendChild(el);
+    });
+
+    // Ungrouped routes
+    const ungrouped = filtered.filter(r => !groupedIds.has(r.id));
+    ungrouped.forEach(r => list.appendChild(makeRouteItem(r)));
+  }
+}
+
+function makeGroupItem(group, members, stats) {
+  const el = document.createElement('div');
+  el.className = 'group-item';
+  el.dataset.groupId = group.id;
+
+  el.innerHTML = `
+    <div class="group-header" data-group-id="${esc(group.id)}">
+      <span class="group-chevron">▶</span>
+      <span class="group-icon">📁</span>
+      <div class="group-info">
+        <div class="group-name">${esc(group.name)}</div>
+        <div class="group-meta">${members.length} routes · ${fmtKm(stats.km)} km</div>
+      </div>
+    </div>
+  `;
+
+  const headerEl = el.querySelector('.group-header');
+
+  // Hover → highlight group routes on map
+  headerEl.addEventListener('mouseenter', () => highlightGroup(group, true));
+  headerEl.addEventListener('mouseleave', () => highlightGroup(group, false));
+
+  // Click → open group
+  headerEl.addEventListener('click', () => {
+    openGroupId = group.id;
+    render();
+    fitGroupRoutes(group);
   });
+
+  return el;
+}
+
+function makeRouteItem(route) {
+  const item  = document.createElement('div');
+  item.className = 'route-item';
+  item.dataset.id = route.id;
+  const color = ACTIVITY_COLORS[route.type] || ACTIVITY_COLORS.other;
+  const km    = route.metrics?.distanceKm ?? '?';
+  const gain  = route.metrics?.elevGain ?? null;
+  const date  = route.metrics?.startTime
+    ? new Date(route.metrics.startTime).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})
+    : '';
+  item.innerHTML = `
+    <div class="route-dot" style="background:${color}"></div>
+    <div class="route-info">
+      <div class="route-name">${esc(route.name)}</div>
+      <div class="route-meta">${km} km${gain ? ' · ↑'+gain+'m' : ''}${date ? ' · '+date : ''}</div>
+    </div>
+    <span class="route-arrow">›</span>
+  `;
+  item.addEventListener('click', () => { window.location.href = `route.html?id=${route.id}`; });
+  return item;
 }
 
 function renderMap() {
@@ -85,61 +206,84 @@ function renderMap() {
   const filtered = filteredRoutes();
   if (filtered.length === 0) return;
 
+  // In open-group view, dim routes outside the group
+  const focusIds = openGroupId
+    ? groupRouteIds(groups.find(g => g.id === openGroupId))
+    : null;
+
   filtered.forEach(route => {
     const path = route.metrics?.simplifiedPath;
     if (!path || path.length < 2) return;
-
-    const color = ACTIVITY_COLORS[route.type] || ACTIVITY_COLORS.other;
+    const color   = ACTIVITY_COLORS[route.type] || ACTIVITY_COLORS.other;
+    const dimmed  = focusIds && !focusIds.has(route.id);
     const latlngs = path.map(p => [p.lat, p.lon]);
 
-    const pl = L.polyline(latlngs, { color, weight: 3, opacity: 0.75 }).addTo(map);
+    const pl = L.polyline(latlngs, {
+      color:   dimmed ? '#444' : color,
+      weight:  dimmed ? 2 : 3,
+      opacity: dimmed ? 0.3 : 0.8,
+    }).addTo(map);
 
-    pl.on('click', () => openRoute(route.id));
-    pl.on('mouseover', e => {
-      pl.setStyle({ weight: 5, opacity: 1 });
-      const km = route.metrics?.distanceKm ?? '?';
-      const gain = route.metrics?.elevGain;
-      L.popup({ closeButton: false })
-        .setLatLng(e.latlng)
-        .setContent(`
-          <div class="popup-name">${esc(route.name)}</div>
-          <div class="popup-meta">
-            📍 ${km} km${gain ? '<br/>↑ ' + gain + ' m gain' : ''}<br/>
-            ${ACTIVITY_EMOJI[route.type] || '✦'} ${route.type}
-          </div>
-          <a class="popup-link" href="route.html?id=${route.id}">View details →</a>
-        `)
-        .openOn(map);
-    });
-    pl.on('mouseout', () => pl.setStyle({ weight: 3, opacity: 0.75 }));
+    if (!dimmed) {
+      pl.on('mouseover', e => {
+        pl.setStyle({ weight:5, opacity:1 });
+        const km   = route.metrics?.distanceKm ?? '?';
+        const gain = route.metrics?.elevGain;
+        L.popup({ closeButton:false })
+          .setLatLng(e.latlng)
+          .setContent(`
+            <div class="popup-name">${esc(route.name)}</div>
+            <div class="popup-meta">
+              📍 ${km} km${gain ? '<br/>↑ '+gain+' m gain' : ''}<br/>
+              ${ACTIVITY_EMOJI[route.type]||'✦'} ${route.type}
+            </div>
+            <a class="popup-link" href="route.html?id=${route.id}">View details →</a>
+          `)
+          .openOn(map);
+      });
+      pl.on('mouseout', () => pl.setStyle({ weight:3, opacity:0.8 }));
+      pl.on('click', () => { window.location.href = `route.html?id=${route.id}`; });
+    }
 
     polylines[route.id] = pl;
   });
 
-  const allLatLngs = Object.values(polylines).flatMap(pl => pl.getLatLngs());
-  if (allLatLngs.length > 0) {
-    map.fitBounds(L.latLngBounds(allLatLngs), { padding: [40, 40] });
-  }
+  if (!openGroupId) fitAllRoutes();
 }
 
 function updateStats() {
   const filtered = filteredRoutes();
-  const totalKm   = filtered.reduce((s, r) => s + (r.metrics?.distanceKm || 0), 0);
-  const totalGain = filtered.reduce((s, r) => s + (r.metrics?.elevGain || 0), 0);
-
+  const totalKm   = filtered.reduce((s,r) => s+(r.metrics?.distanceKm||0), 0);
+  const totalGain = filtered.reduce((s,r) => s+(r.metrics?.elevGain||0), 0);
   document.getElementById('statRoutes').textContent = filtered.length;
   document.getElementById('statKm').textContent = totalKm >= 1000
-    ? (totalKm / 1000).toFixed(1) + 'k' : Math.round(totalKm);
+    ? (totalKm/1000).toFixed(1)+'k' : Math.round(totalKm);
   document.getElementById('statElev').textContent = totalGain >= 1000
-    ? (totalGain / 1000).toFixed(1) + 'k' : totalGain;
+    ? (totalGain/1000).toFixed(1)+'k' : totalGain;
 }
 
-function filteredRoutes() {
-  return activeFilter === 'all' ? routes : routes.filter(r => r.type === activeFilter);
+// ── Map helpers ───────────────────────────────────────────────────────────────
+function fitAllRoutes() {
+  const all = Object.values(polylines).flatMap(pl => pl.getLatLngs());
+  if (all.length > 0) map.fitBounds(L.latLngBounds(all), { padding:[40,40] });
 }
 
-function openRoute(id) {
-  window.location.href = `route.html?id=${id}`;
+function fitGroupRoutes(group) {
+  const ids = groupRouteIds(group);
+  const lls = Object.entries(polylines)
+    .filter(([id]) => ids.has(id))
+    .flatMap(([,pl]) => pl.getLatLngs());
+  if (lls.length > 0) map.fitBounds(L.latLngBounds(lls), { padding:[40,40] });
+}
+
+function highlightGroup(group, on) {
+  const ids = groupRouteIds(group);
+  Object.entries(polylines).forEach(([id, pl]) => {
+    if (ids.has(id)) {
+      pl.setStyle(on ? { weight:5, opacity:1 } : { weight:3, opacity:0.8 });
+      if (on) pl.bringToFront();
+    }
+  });
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -152,23 +296,24 @@ document.querySelectorAll('.pill').forEach(pill => {
   });
 });
 
-// ── Import modal (step 1: pick file + metadata) ───────────────────────────────
+// ── Import modal ──────────────────────────────────────────────────────────────
 const importModal    = document.getElementById('modalBackdrop');
 const fileInput      = document.getElementById('fileInput');
 const modalDropZone  = document.getElementById('modalDropZone');
 const routeNameInput = document.getElementById('routeName');
 const activitySelect = document.getElementById('activityType');
+let pendingParsed = null, pendingGpxText = null;
 
 document.getElementById('importBtn').addEventListener('click', openImportModal);
 document.getElementById('cancelBtn').addEventListener('click', closeImportModal);
 document.getElementById('confirmBtn').addEventListener('click', confirmImport);
-importModal.addEventListener('click', e => { if (e.target === importModal) closeImportModal(); });
+importModal.addEventListener('click', e => { if (e.target===importModal) closeImportModal(); });
 
-function openImportModal(parsed = null) {
+function openImportModal(parsed=null) {
   pendingParsed = parsed;
   if (parsed) {
     routeNameInput.value = parsed.name;
-    document.getElementById('dropZoneLabel').textContent = '✓ ' + parsed.name + '.gpx loaded';
+    document.getElementById('dropZoneLabel').textContent = '✓ '+parsed.name+'.gpx loaded';
   } else {
     routeNameInput.value = '';
     document.getElementById('dropZoneLabel').innerHTML = '📂 Drop GPX here or <u>browse</u>';
@@ -178,72 +323,55 @@ function openImportModal(parsed = null) {
 
 function closeImportModal() {
   importModal.classList.remove('open');
-  pendingParsed = null;
-  pendingGpxText = null;
-  fileInput.value = '';
+  pendingParsed = null; pendingGpxText = null; fileInput.value = '';
 }
 
 async function confirmImport() {
   if (!pendingParsed) { alert('Please select a GPX file first.'); return; }
-
   const name = routeNameInput.value.trim() || pendingParsed.name;
   const type = activitySelect.value;
-  const btn = document.getElementById('confirmBtn');
-  btn.textContent = 'Preparing…'; btn.disabled = true;
-
+  const btn  = document.getElementById('confirmBtn');
+  btn.textContent='Preparing…'; btn.disabled=true;
   try {
     const files = await Store.prepareCommitFiles({
-      name,
-      type,
-      gpxText:        pendingGpxText,
-      metrics:        pendingParsed.metrics,
+      name, type, gpxText: pendingGpxText,
+      metrics: pendingParsed.metrics,
       simplifiedPath: pendingParsed.metrics.simplifiedPath,
     });
-
     closeImportModal();
     openCommitModal(files);
-  } catch (e) {
-    alert('Error preparing files: ' + e.message);
+  } catch(e) {
+    alert('Error preparing files: '+e.message);
   } finally {
-    btn.textContent = 'Add Route'; btn.disabled = false;
+    btn.textContent='Add Route'; btn.disabled=false;
   }
 }
 
-// ── Commit modal (step 2: download files + instructions) ──────────────────────
+// ── Commit modal ──────────────────────────────────────────────────────────────
 const commitModal = document.getElementById('commitModalBackdrop');
 document.getElementById('commitCloseBtn').addEventListener('click', closeCommitModal);
-commitModal.addEventListener('click', e => { if (e.target === commitModal) closeCommitModal(); });
+commitModal.addEventListener('click', e => { if (e.target===commitModal) closeCommitModal(); });
 
 function openCommitModal(files) {
-  // Wire up download buttons
-  document.getElementById('dlGpx').onclick = () => download(files.gpxFilename.split('/').pop(), files.gpxText, 'application/gpx+xml');
+  document.getElementById('dlGpx').onclick   = () => download(files.gpxFilename.split('/').pop(), files.gpxText, 'application/gpx+xml');
   document.getElementById('dlIndex').onclick = () => download('index.json', files.indexJson, 'application/json');
-
-  // Show filenames in instructions
   document.getElementById('commitGpxPath').textContent   = files.gpxFilename;
   document.getElementById('commitIndexPath').textContent = files.indexFilename;
-
-  // Show git snippet
   document.getElementById('commitSnippet').textContent =
 `git add ${files.gpxFilename} ${files.indexFilename}
 git commit -m "Add route: ${files.entry.name}"
 git push`;
-
   commitModal.classList.add('open');
 }
 
-function closeCommitModal() {
-  commitModal.classList.remove('open');
-}
+function closeCommitModal() { commitModal.classList.remove('open'); }
 
 function download(filename, content, mime) {
-  const blob = new Blob([content], { type: mime });
+  const blob = new Blob([content],{type:mime});
   const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const a    = Object.assign(document.createElement('a'),{href:url,download:filename});
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 // ── File handling ─────────────────────────────────────────────────────────────
@@ -255,38 +383,31 @@ function handleFile(file) {
       pendingGpxText = e.target.result;
       const parsed = GPXParser.parse(pendingGpxText, file.name);
       openImportModal(parsed);
-    } catch (err) {
-      alert('Could not parse GPX: ' + err.message);
-    }
+    } catch(err) { alert('Could not parse GPX: '+err.message); }
   };
   reader.readAsText(file);
 }
 
 modalDropZone.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+fileInput.addEventListener('change', () => { if(fileInput.files[0]) handleFile(fileInput.files[0]); });
 modalDropZone.addEventListener('dragover', e => { e.preventDefault(); modalDropZone.classList.add('dragover'); });
 modalDropZone.addEventListener('dragleave', () => modalDropZone.classList.remove('dragover'));
 modalDropZone.addEventListener('drop', e => {
   e.preventDefault(); modalDropZone.classList.remove('dragover');
-  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
 });
 
 let dragCounter = 0;
 document.addEventListener('dragenter', e => {
-  if (e.dataTransfer.types.includes('Files')) { dragCounter++; document.getElementById('dropOverlay').classList.add('active'); }
+  if(e.dataTransfer.types.includes('Files')){ dragCounter++; document.getElementById('dropOverlay').classList.add('active'); }
 });
 document.addEventListener('dragleave', () => {
-  if (--dragCounter <= 0) { dragCounter = 0; document.getElementById('dropOverlay').classList.remove('active'); }
+  if(--dragCounter<=0){ dragCounter=0; document.getElementById('dropOverlay').classList.remove('active'); }
 });
 document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', e => {
-  e.preventDefault(); dragCounter = 0;
+  e.preventDefault(); dragCounter=0;
   document.getElementById('dropOverlay').classList.remove('active');
-  if (importModal.classList.contains('open') || commitModal.classList.contains('open')) return;
-  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  if(importModal.classList.contains('open')||commitModal.classList.contains('open')) return;
+  if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
 });
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function esc(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
