@@ -128,11 +128,17 @@ function computeMetrics(points) {
   const totalMs = points[0]?.time && points[points.length-1]?.time
     ? points[points.length-1].time - points[0].time : null;
 
-  // Elevation profile (max 500 samples)
-  const step = Math.max(1, Math.floor(points.length / 500));
-  const elevProfile = points
-    .filter((_, i) => i % step === 0 && points[i].ele !== null)
-    .map((p, i) => ({ d: Math.round(i * step * distanceM / points.length), ele: Math.round(p.ele) }));
+  // Elevation profile — full resolution using running distance accumulator
+  // Capped at 2000 points to keep index.json reasonable in size
+  const MAX_PROFILE = 2000;
+  const elevRaw = [];
+  let runDist = 0;
+  for (let i = 0; i < points.length; i++) {
+    if (i > 0) runDist += haversine(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
+    if (points[i].ele !== null) elevRaw.push({ d: Math.round(runDist), ele: Math.round(points[i].ele) });
+  }
+  const elevStep = Math.max(1, Math.floor(elevRaw.length / MAX_PROFILE));
+  const elevProfile = elevRaw.filter((_, i) => i % elevStep === 0);
 
   const simplifiedPath = simplify(points, 0.00001);
 
