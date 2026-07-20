@@ -88,17 +88,16 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-function smoothElevations(points, windowSize = 10) {
-  // Gaussian-style rolling average to remove GPS elevation noise
-  // before computing accumulated ascent/descent
+function smoothedElevArray(points, windowSize = 10) {
+  // Returns a plain number[] of smoothed elevations, parallel to points[]
   const elev = points.map(p => p.ele);
-  return points.map((p, i) => {
-    if (p.ele === null) return p;
+  return elev.map((e, i) => {
+    if (e === null) return null;
     const half = Math.floor(windowSize / 2);
-    const slice = elev.slice(Math.max(0, i - half), Math.min(elev.length, i + half + 1))
-      .filter(e => e !== null);
-    const avg = slice.reduce((s, e) => s + e, 0) / slice.length;
-    return { ...p, ele: avg };
+    const slice = elev
+      .slice(Math.max(0, i - half), Math.min(elev.length, i + half + 1))
+      .filter(v => v !== null);
+    return slice.reduce((s, v) => s + v, 0) / slice.length;
   });
 }
 
@@ -110,11 +109,10 @@ function computeMetrics(points) {
   let minLon = Infinity, maxLon = -Infinity;
 
   // Smooth elevations before computing gain/loss to eliminate GPS noise
-  const smoothed = smoothElevations(points);
+  const smoothedElev = smoothedElevArray(points);
 
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
-    const s = smoothed[i];
     if (p.lat < minLat) minLat = p.lat;
     if (p.lat > maxLat) maxLat = p.lat;
     if (p.lon < minLon) minLon = p.lon;
@@ -127,13 +125,14 @@ function computeMetrics(points) {
     if (i === 0) continue;
 
     const prev = points[i-1];
-    const sp = smoothed[i-1];
     const d = haversine(prev.lat, prev.lon, p.lat, p.lon);
     distanceM += d;
 
-    // Use smoothed elevation for gain/loss — sum ALL positive/negative changes
-    if (s.ele !== null && sp.ele !== null) {
-      const dEle = s.ele - sp.ele;
+    // Use smoothed elevation — sum ALL positive/negative changes
+    const se  = smoothedElev[i];
+    const sep = smoothedElev[i-1];
+    if (se !== null && sep !== null) {
+      const dEle = se - sep;
       if (dEle > 0) elevGain += dEle;
       else          elevLoss += Math.abs(dEle);
     }
