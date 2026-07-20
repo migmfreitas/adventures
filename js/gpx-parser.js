@@ -72,8 +72,7 @@ const GPXParser = {
     let minLat = Infinity, maxLat = -Infinity;
     let minLon = Infinity, maxLon = -Infinity;
 
-    const MAX_PROFILE = 500;
-
+    const smoothedElev = this._smoothedElevArray(points);
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
 
@@ -114,11 +113,16 @@ const GPXParser = {
       ? points[points.length - 1].time - points[0].time
       : null;
 
-    // Elevation profile (downsampled)
-    const step = Math.max(1, Math.floor(points.length / MAX_PROFILE));
-    const elevProfile = points
-      .filter((_, i) => i % step === 0 && points[i].ele !== null)
-      .map((p, i) => ({ d: Math.round(i * step * distanceM / points.length), ele: Math.round(p.ele) }));
+    // Elevation profile — up to 2000 points using running distance accumulator
+    const MAX_PROFILE = 2000;
+    const elevRaw = [];
+    let runDist = 0;
+    for (let i = 0; i < points.length; i++) {
+      if (i > 0) runDist += this._haversine(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
+      if (points[i].ele !== null) elevRaw.push({ d: Math.round(runDist), ele: Math.round(points[i].ele) });
+    }
+    const elevStep = Math.max(1, Math.floor(elevRaw.length / MAX_PROFILE));
+    const elevProfile = elevRaw.filter((_, i) => i % elevStep === 0);
 
     // Simplified path for overview map (RDP)
     const simplified = this._simplify(points, 0.0001);
