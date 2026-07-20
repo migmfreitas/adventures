@@ -1,0 +1,11 @@
+[
+  {
+    "id": "eurovelo-1-portugal",
+    "name": "EuroVelo 1 — Portugal",
+    "description": "10-day cycling tour along the Portuguese coast from Porto to Sagres, following the EuroVelo 1 Atlantic Coast route. ~1000km of coastline, headwinds, pastel de nata.",
+    "routes": [
+      "bike-EuroVelo-1-Stage-1-Porto-to-Vagueira",
+      "bike-EuroVelo-1-Stage-1-Vagueira-to-Soure"
+    ]
+  }
+]
