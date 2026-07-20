@@ -62,6 +62,18 @@ const GPXParser = {
     return n ? n.textContent.trim() : null;
   },
 
+  _smoothElevations(points, windowSize = 10) {
+    const elev = points.map(p => p.ele);
+    return points.map((p, i) => {
+      if (p.ele === null) return p;
+      const half = Math.floor(windowSize / 2);
+      const slice = elev.slice(Math.max(0, i - half), Math.min(elev.length, i + half + 1))
+        .filter(e => e !== null);
+      const avg = slice.reduce((s, e) => s + e, 0) / slice.length;
+      return { ...p, ele: avg };
+    });
+  },
+
   _computeMetrics(points) {
     let distanceM = 0;
     let elevGain = 0;
@@ -72,11 +84,12 @@ const GPXParser = {
     let minLat = Infinity, maxLat = -Infinity;
     let minLon = Infinity, maxLon = -Infinity;
 
-    // Elevation samples for profile (downsample if many points)
     const MAX_PROFILE = 500;
+    const smoothed = this._smoothElevations(points);
 
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
+      const s = smoothed[i];
 
       // Bounds
       if (p.lat < minLat) minLat = p.lat;
@@ -84,7 +97,7 @@ const GPXParser = {
       if (p.lon < minLon) minLon = p.lon;
       if (p.lon > maxLon) maxLon = p.lon;
 
-      // Elevation
+      // Elevation (use raw for min/max display)
       if (p.ele !== null) {
         if (p.ele < minEle) minEle = p.ele;
         if (p.ele > maxEle) maxEle = p.ele;
@@ -96,14 +109,15 @@ const GPXParser = {
       if (i === 0) continue;
 
       const prev = points[i - 1];
+      const sp = smoothed[i - 1];
       const d = this._haversine(prev.lat, prev.lon, p.lat, p.lon);
       distanceM += d;
 
-      // Elevation change (smooth out noise with 2m threshold)
-      if (p.ele !== null && prev.ele !== null) {
-        const dEle = p.ele - prev.ele;
-        if (dEle > 2) elevGain += dEle;
-        else if (dEle < -2) elevLoss += Math.abs(dEle);
+      // Use smoothed elevation — sum ALL positive/negative changes
+      if (s.ele !== null && sp.ele !== null) {
+        const dEle = s.ele - sp.ele;
+        if (dEle > 0)  elevGain += dEle;
+        else           elevLoss += Math.abs(dEle);
       }
 
       // Moving time (exclude stops: <0.5 km/h)
