@@ -88,7 +88,7 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-function smoothedElevArray(points, windowSize = 10) {
+function smoothedElevArray(points, windowSize = 3) {
   // Returns a plain number[] of smoothed elevations, parallel to points[]
   const elev = points.map(p => p.ele);
   return elev.map((e, i) => {
@@ -133,8 +133,8 @@ function computeMetrics(points) {
     const sep = smoothedElev[i-1];
     if (se !== null && sep !== null) {
       const dEle = se - sep;
-      if (dEle > 0) elevGain += dEle;
-      else          elevLoss += Math.abs(dEle);
+      if (dEle > 0.5)       elevGain += dEle;
+      else if (dEle < -0.5) elevLoss += Math.abs(dEle);
     }
 
     if (p.time && prev.time) {
