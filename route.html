@@ -14,17 +14,8 @@
     }
     html, body { min-height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; }
 
-    header {
-      position: sticky; top: 0; z-index: 100;
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      height: 56px; display: flex; align-items: center; padding: 0 20px; gap: 16px;
-    }
-    .back-btn {
-      font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted);
-      text-decoration: none; display: flex; align-items: center; gap: 6px;
-      padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);
-      background: var(--surface2); transition: all .15s; white-space: nowrap;
-    }
+    header { position: sticky; top: 0; z-index: 100; background: var(--surface); border-bottom: 1px solid var(--border); height: 56px; display: flex; align-items: center; padding: 0 20px; gap: 16px; }
+    .back-btn { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); text-decoration: none; display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); transition: all .15s; white-space: nowrap; }
     .back-btn:hover { color: var(--text); }
     .header-title { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .header-type { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 3px 10px; border-radius: 20px; margin-left: auto; white-space: nowrap; flex-shrink: 0; }
@@ -34,7 +25,6 @@
     .page { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
     .state-msg { padding: 80px 20px; text-align: center; font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-size: 13px; }
     .state-msg a { color: var(--accent); text-decoration: none; }
-
     .route-hero { margin-bottom: 28px; }
     .route-title { font-size: 28px; font-weight: 600; margin-bottom: 6px; }
     .route-subtitle { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); }
@@ -50,11 +40,11 @@
     #routeMap { height: 460px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 28px; overflow: hidden; }
 
     .profile-container { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 28px; }
-    .profile-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .profile-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
     .profile-title { font-size: 14px; font-weight: 500; }
-    .profile-stats { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); display: flex; gap: 16px; flex-wrap: wrap; }
-    .profile-wrap { position: relative; }
-    .profile-canvas { width: 100%; height: 160px; display: block; cursor: crosshair; }
+    .profile-stats { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+    .profile-wrap { position: relative; user-select: none; }
+    .profile-canvas { width: 100%; height: 160px; display: block; }
     .profile-tooltip {
       position: absolute; pointer-events: none;
       background: var(--surface2); border: 1px solid var(--border);
@@ -62,6 +52,18 @@
       font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text);
       display: none; white-space: nowrap; z-index: 10;
     }
+    .zoom-hint {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted);
+      opacity: 0.6; margin-top: 6px; text-align: right;
+    }
+    .reset-zoom {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      padding: 3px 10px; border-radius: 5px;
+      border: 1px solid var(--accent); background: transparent;
+      color: var(--accent); cursor: pointer; display: none;
+      transition: all .15s;
+    }
+    .reset-zoom:hover { background: var(--accent); color: #fff; }
 
     .details-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 28px; }
     .details-card table { width: 100%; border-collapse: collapse; }
@@ -107,23 +109,29 @@
     <div class="profile-container" id="elevSection" style="display:none">
       <div class="profile-header">
         <div class="profile-title">Elevation Profile</div>
-        <div class="profile-stats" id="elevStats"></div>
+        <div class="profile-stats" id="elevStats">
+          <button class="reset-zoom" id="elevReset">↺ Reset zoom</button>
+        </div>
       </div>
       <div class="profile-wrap">
         <canvas class="profile-canvas" id="elevCanvas"></canvas>
         <div class="profile-tooltip" id="elevTooltip"></div>
       </div>
+      <div class="zoom-hint">drag to zoom · double-click to reset</div>
     </div>
 
     <div class="profile-container" id="speedSection" style="display:none">
       <div class="profile-header">
         <div class="profile-title">Speed Profile</div>
-        <div class="profile-stats" id="speedStats"></div>
+        <div class="profile-stats" id="speedStats">
+          <button class="reset-zoom" id="speedReset">↺ Reset zoom</button>
+        </div>
       </div>
       <div class="profile-wrap">
         <canvas class="profile-canvas" id="speedCanvas"></canvas>
         <div class="profile-tooltip" id="speedTooltip"></div>
       </div>
+      <div class="zoom-hint">drag to zoom · double-click to reset</div>
     </div>
 
     <div class="section-label">Details</div>
@@ -138,303 +146,384 @@
 const ACTIVITY_COLORS = { bike:'#e07840', hike:'#52c97a', kayak:'#4a9eff', run:'#f5c842', other:'#b48aff' };
 const ACTIVITY_EMOJI  = { bike:'🚴', hike:'🥾', kayak:'🛶', run:'🏃', other:'✦' };
 
-function fmt(n, dec=1) { return n == null ? '—' : Number(n).toFixed(dec); }
-function fmtTime(secs) {
-  if (!secs) return '—';
-  const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+function fmt(n,dec=1){ return n==null?'—':Number(n).toFixed(dec); }
+function fmtTime(secs){
+  if(!secs)return'—';
+  const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60);
+  return h>0?`${h}h ${m}m`:`${m}m`;
 }
-function fmtDate(d) {
-  if (!d) return '—';
+function fmtDate(d){
+  if(!d)return'—';
   return new Date(d).toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 }
-function fmtSpeed(km, secs) { return (!km||!secs) ? '—' : fmt(km/(secs/3600))+' km/h'; }
-function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function showError(msg) { document.getElementById('stateMsg').innerHTML = msg; }
+function fmtSpeed(km,secs){ return(!km||!secs)?'—':fmt(km/(secs/3600))+' km/h'; }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function showError(msg){ document.getElementById('stateMsg').innerHTML=msg; }
 
-function haversine(lat1,lon1,lat2,lon2) {
-  const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
   const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ── Build cumulative distance index for map points ────────────────────────────
-// Returns [{lat,lon,distM}] with cumulative distance at each point
-function buildDistIndex(points) {
-  let d = 0;
-  return points.map((p, i) => {
-    if (i > 0) d += haversine(points[i-1].lat, points[i-1].lon, p.lat, p.lon);
-    return { lat: p.lat, lon: p.lon, distM: d };
+function buildDistIndex(points){
+  let d=0;
+  return points.map((p,i)=>{
+    if(i>0) d+=haversine(points[i-1].lat,points[i-1].lon,p.lat,p.lon);
+    return{lat:p.lat,lon:p.lon,distM:d};
   });
 }
 
-// Find the point in distIndex closest to targetDistM
-function seekPoint(distIndex, targetDistM) {
-  let lo = 0, hi = distIndex.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (distIndex[mid].distM < targetDistM) lo = mid + 1;
-    else hi = mid;
-  }
-  // Compare lo and lo-1
-  if (lo > 0 && Math.abs(distIndex[lo-1].distM - targetDistM) < Math.abs(distIndex[lo].distM - targetDistM))
-    return distIndex[lo-1];
+function seekPoint(distIndex,targetDistM){
+  let lo=0,hi=distIndex.length-1;
+  while(lo<hi){ const mid=(lo+hi)>>1; if(distIndex[mid].distM<targetDistM)lo=mid+1; else hi=mid; }
+  if(lo>0&&Math.abs(distIndex[lo-1].distM-targetDistM)<Math.abs(distIndex[lo].distM-targetDistM)) return distIndex[lo-1];
   return distIndex[lo];
 }
 
-// ── Speed profile ─────────────────────────────────────────────────────────────
-function buildSpeedProfile(points, maxSamples=500) {
-  const timed = points.filter(p => p.time);
-  if (timed.length < 2) return [];
-  let distM = 0;
-  const raw = [];
-  for (let i = 1; i < timed.length; i++) {
-    const prev = timed[i-1], cur = timed[i];
-    const d = haversine(prev.lat,prev.lon,cur.lat,cur.lon);
-    const dt = (cur.time - prev.time) / 1000;
-    distM += d;
-    if (dt <= 0) continue;
-    raw.push({ d: distM, speed: Math.min((d/dt)*3.6, 120) });
+function buildSpeedProfile(points,maxSamples=500){
+  const timed=points.filter(p=>p.time);
+  if(timed.length<2)return[];
+  let distM=0; const raw=[];
+  for(let i=1;i<timed.length;i++){
+    const prev=timed[i-1],cur=timed[i];
+    const d=haversine(prev.lat,prev.lon,cur.lat,cur.lon);
+    const dt=(cur.time-prev.time)/1000;
+    distM+=d;
+    if(dt<=0)continue;
+    raw.push({d:distM,speed:Math.min((d/dt)*3.6,120)});
   }
-  if (raw.length === 0) return [];
-  const W = 5;
-  const smoothed = raw.map((pt,i) => {
-    const slice = raw.slice(Math.max(0,i-W), Math.min(raw.length,i+W+1));
-    return { d: Math.round(pt.d), speed: Math.round(slice.reduce((s,p)=>s+p.speed,0)/slice.length*10)/10 };
+  if(raw.length===0)return[];
+  const W=5;
+  const smoothed=raw.map((pt,i)=>{
+    const slice=raw.slice(Math.max(0,i-W),Math.min(raw.length,i+W+1));
+    return{d:Math.round(pt.d),speed:Math.round(slice.reduce((s,p)=>s+p.speed,0)/slice.length*10)/10};
   });
-  const step = Math.max(1, Math.floor(smoothed.length/maxSamples));
-  return smoothed.filter((_,i) => i%step===0);
+  const step=Math.max(1,Math.floor(smoothed.length/maxSamples));
+  return smoothed.filter((_,i)=>i%step===0);
 }
 
-// ── Shared seek state ─────────────────────────────────────────────────────────
-// Each chart registers itself; calling globalSeek(distM, source) updates all others
-const seekers = [];  // { id, fn }
-let mapMarker = null;
-let distIndex = null;
-let routeMap  = null;
+// ── Shared seek / zoom state ──────────────────────────────────────────────────
+const seekers=[];
+let mapMarker=null, zoomPolyline=null;
+let distIndex=null, routeMap=null;
 
-function globalSeek(distM, sourceId) {
-  // Move map marker
-  if (distIndex && routeMap) {
-    const pt = seekPoint(distIndex, distM);
-    if (!mapMarker) {
-      mapMarker = L.circleMarker([pt.lat, pt.lon], {
-        radius: 7, color: '#fff', weight: 2,
-        fillColor: window._routeColor, fillOpacity: 1,
+function globalSeek(distM,sourceId){
+  if(distIndex&&routeMap){
+    const pt=seekPoint(distIndex,distM);
+    if(!mapMarker){
+      mapMarker=L.circleMarker([pt.lat,pt.lon],{
+        radius:7,color:'#fff',weight:2,
+        fillColor:window._routeColor,fillOpacity:1,
       }).addTo(routeMap);
-    } else {
-      mapMarker.setLatLng([pt.lat, pt.lon]);
-    }
+    } else { mapMarker.setLatLng([pt.lat,pt.lon]); }
   }
-  // Sync other charts
-  seekers.forEach(s => { if (s.id !== sourceId) s.fn(distM); });
+  seekers.forEach(s=>{ if(s.id!==sourceId) s.seekFn(distM); });
 }
 
-function clearSeek() {
-  if (mapMarker) { mapMarker.setLatLng([-9999, -9999]); }
-  seekers.forEach(s => s.fn(null));
+function clearSeek(){
+  if(mapMarker) mapMarker.setLatLng([-9999,-9999]);
+  seekers.forEach(s=>s.seekFn(null));
 }
 
-// ── Chart factory — returns a seek function ───────────────────────────────────
-function makeChart({ canvasId, tooltipId, data, color, yUnit, statsEl, statsHtml }) {
-  const canvas  = document.getElementById(canvasId);
-  const tooltip = document.getElementById(tooltipId);
-  if (!canvas || data.length < 2) return null;
-  if (statsEl && statsHtml) statsEl.innerHTML = statsHtml;
-
-  const minY = Math.min(...data.map(p=>p.y));
-  const maxY = Math.max(...data.map(p=>p.y));
-  const maxD = data[data.length-1].d;
-  const PAD  = { l:48, r:10, t:10, b:28 };
-
-  let currentX = null; // canvas x of active crosshair (null = hidden)
-
-  function dims() {
-    return { W: canvas.offsetWidth, H: canvas.offsetHeight,
-             gW: canvas.offsetWidth - PAD.l - PAD.r,
-             gH: canvas.offsetHeight - PAD.t - PAD.b };
+// When any chart zooms, highlight that range on the map
+function globalZoom(minD,maxD){
+  if(!distIndex||!routeMap) return;
+  if(zoomPolyline){ routeMap.removeLayer(zoomPolyline); zoomPolyline=null; }
+  if(minD===null) return;
+  const pts=distIndex.filter(p=>p.distM>=minD&&p.distM<=maxD);
+  if(pts.length>=2){
+    zoomPolyline=L.polyline(pts.map(p=>[p.lat,p.lon]),{
+      color:'#fff',weight:5,opacity:0.6,
+    }).addTo(routeMap);
+    routeMap.fitBounds(zoomPolyline.getBounds(),{padding:[40,40],animate:true});
   }
-  function xOf(d, gW) { return PAD.l + (d/maxD)*gW; }
-  function yOf(y, gH) { const r=(maxY-minY)||1; return PAD.t+gH-((y-minY)/r)*gH; }
+}
 
-  function draw(crosshairX) {
-    const { W, H, gW, gH } = dims();
-    canvas.width  = W * devicePixelRatio;
-    canvas.height = H * devicePixelRatio;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(devicePixelRatio, devicePixelRatio);
+function globalZoomReset(){
+  if(zoomPolyline){ routeMap.removeLayer(zoomPolyline); zoomPolyline=null; }
+  // Restore full route bounds
+  if(distIndex&&routeMap){
+    const lls=distIndex.map(p=>[p.lat,p.lon]);
+    routeMap.fitBounds(L.latLngBounds(lls),{padding:[30,30],animate:true});
+  }
+}
 
-    const yRange = (maxY-minY)||1;
+// ── Chart factory ─────────────────────────────────────────────────────────────
+function makeChart({ canvasId, tooltipId, resetBtnId, data, color, yUnit, statsEl, statsHtml }){
+  const canvas   = document.getElementById(canvasId);
+  const tooltip  = document.getElementById(tooltipId);
+  const resetBtn = document.getElementById(resetBtnId);
+  if(!canvas||data.length<2) return null;
+  if(statsEl&&statsHtml) statsEl.insertAdjacentHTML('afterbegin', statsHtml+'&nbsp;&nbsp;');
+
+  const fullMinY = Math.min(...data.map(p=>p.y));
+  const fullMaxY = Math.max(...data.map(p=>p.y));
+  const fullMaxD = data[data.length-1].d;
+  const PAD = {l:48,r:10,t:10,b:28};
+
+  // View window (null = full view)
+  let view = { minD:0, maxD:fullMaxD };
+  let isZoomed = false;
+
+  // Drag state
+  let dragStart=null, dragCurrent=null, isDragging=false;
+  // Crosshair
+  let currentDistM=null;
+
+  function dims(){ return{W:canvas.offsetWidth,H:canvas.offsetHeight,gW:canvas.offsetWidth-PAD.l-PAD.r,gH:canvas.offsetHeight-PAD.t-PAD.b}; }
+
+  function xOf(d,gW){ return PAD.l+(d-view.minD)/(view.maxD-view.minD)*gW; }
+  function dOfX(x,gW){ return view.minD+(x-PAD.l)/gW*(view.maxD-view.minD); }
+  function yOf(y,gH){
+    const visData=data.filter(p=>p.d>=view.minD&&p.d<=view.maxD);
+    const minY=isZoomed?Math.min(...visData.map(p=>p.y)):fullMinY;
+    const maxY=isZoomed?Math.max(...visData.map(p=>p.y)):fullMaxY;
+    const r=(maxY-minY)||1;
+    return PAD.t+gH-((y-minY)/r)*gH;
+  }
+
+  function draw(){
+    const{W,H,gW,gH}=dims();
+    canvas.width=W*devicePixelRatio; canvas.height=H*devicePixelRatio;
+    const ctx=canvas.getContext('2d');
+    ctx.scale(devicePixelRatio,devicePixelRatio);
+
+    const visData=data.filter(p=>p.d>=view.minD&&p.d<=view.maxD);
+    if(visData.length<2){ ctx.fillStyle='#7a849e'; ctx.font='12px IBM Plex Mono'; ctx.fillText('No data in range',PAD.l+8,PAD.t+gH/2); return; }
+
+    const minY=isZoomed?Math.min(...visData.map(p=>p.y)):fullMinY;
+    const maxY=isZoomed?Math.max(...visData.map(p=>p.y)):fullMaxY;
+    const yRange=(maxY-minY)||1;
+    const _yOf=y=>PAD.t+gH-((y-minY)/yRange)*gH;
+
     // Grid
     ctx.strokeStyle='#2a3048'; ctx.lineWidth=1;
-    for (let i=0; i<=4; i++) {
-      const y=minY+yRange*i/4, yp=yOf(y,gH);
+    for(let i=0;i<=4;i++){
+      const y=minY+yRange*i/4, yp=_yOf(y);
       ctx.beginPath(); ctx.moveTo(PAD.l,yp); ctx.lineTo(PAD.l+gW,yp); ctx.stroke();
       ctx.fillStyle='#7a849e'; ctx.font='10px IBM Plex Mono';
-      ctx.fillText(Math.round(y)+yUnit, 2, yp+4);
+      ctx.fillText(Math.round(y)+yUnit,2,yp+4);
     }
-    // Area
+    // Area fill
     const grad=ctx.createLinearGradient(0,PAD.t,0,PAD.t+gH);
     grad.addColorStop(0,color+'55'); grad.addColorStop(1,color+'05');
     ctx.beginPath();
-    ctx.moveTo(xOf(data[0].d,gW),yOf(data[0].y,gH));
-    data.forEach(p=>ctx.lineTo(xOf(p.d,gW),yOf(p.y,gH)));
-    ctx.lineTo(xOf(maxD,gW),PAD.t+gH); ctx.lineTo(PAD.l,PAD.t+gH);
+    ctx.moveTo(xOf(visData[0].d,gW),_yOf(visData[0].y));
+    visData.forEach(p=>ctx.lineTo(xOf(p.d,gW),_yOf(p.y)));
+    ctx.lineTo(xOf(visData[visData.length-1].d,gW),PAD.t+gH);
+    ctx.lineTo(xOf(visData[0].d,gW),PAD.t+gH);
     ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
     // Line
     ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=2; ctx.lineJoin='round';
-    data.forEach((p,i)=>i===0?ctx.moveTo(xOf(p.d,gW),yOf(p.y,gH)):ctx.lineTo(xOf(p.d,gW),yOf(p.y,gH)));
+    visData.forEach((p,i)=>i===0?ctx.moveTo(xOf(p.d,gW),_yOf(p.y)):ctx.lineTo(xOf(p.d,gW),_yOf(p.y)));
     ctx.stroke();
     // X labels
+    const span=view.maxD-view.minD;
     const xTicks=Math.min(6,Math.floor(gW/80));
     ctx.fillStyle='#7a849e'; ctx.font='10px IBM Plex Mono';
-    for (let i=0; i<=xTicks; i++) {
-      const d=maxD*i/xTicks;
-      ctx.fillText((d/1000).toFixed(1)+'km', xOf(d,gW)-14, H-6);
+    for(let i=0;i<=xTicks;i++){
+      const d=view.minD+span*i/xTicks;
+      ctx.fillText((d/1000).toFixed(1)+'km',xOf(d,gW)-14,H-6);
     }
     // Crosshair
-    if (crosshairX !== null) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4,3]);
-      ctx.beginPath(); ctx.moveTo(crosshairX,PAD.t); ctx.lineTo(crosshairX,PAD.t+gH); ctx.stroke();
+    if(currentDistM!==null&&currentDistM>=view.minD&&currentDistM<=view.maxD){
+      const cx=xOf(currentDistM,gW);
+      ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(cx,PAD.t); ctx.lineTo(cx,PAD.t+gH); ctx.stroke();
       ctx.setLineDash([]);
-      // Dot on line
-      const dAt = ((crosshairX-PAD.l)/gW)*maxD;
-      let best=data[0];
-      for (const p of data) if (Math.abs(p.d-dAt)<Math.abs(best.d-dAt)) best=p;
-      ctx.beginPath();
-      ctx.arc(crosshairX, yOf(best.y,gH), 4, 0, Math.PI*2);
+      let best=visData[0];
+      for(const p of visData) if(Math.abs(p.d-currentDistM)<Math.abs(best.d-currentDistM)) best=p;
+      ctx.beginPath(); ctx.arc(cx,_yOf(best.y),4,0,Math.PI*2);
       ctx.fillStyle='#fff'; ctx.fill();
       ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
     }
-  }
-
-  // Seek function: called by globalSeek with distM (or null to clear)
-  function seekFn(distM) {
-    const { gW } = dims();
-    if (distM === null) {
-      currentX = null;
-      draw(null);
-      tooltip.style.display = 'none';
-      return;
+    // Drag selection rectangle
+    if(isDragging&&dragStart!==null&&dragCurrent!==null){
+      const x1=Math.min(dragStart,dragCurrent), x2=Math.max(dragStart,dragCurrent);
+      ctx.fillStyle='rgba(255,255,255,0.08)';
+      ctx.fillRect(x1,PAD.t,x2-x1,gH);
+      ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=1; ctx.setLineDash([]);
+      ctx.strokeRect(x1,PAD.t,x2-x1,gH);
     }
-    currentX = xOf(distM, gW);
-    draw(currentX);
-    // Update tooltip
-    let best = data[0];
-    for (const p of data) if (Math.abs(p.d-distM) < Math.abs(best.d-distM)) best=p;
-    tooltip.style.display = 'block';
-    const clampedX = Math.min(Math.max(currentX+10, PAD.l), canvas.offsetWidth-120);
-    tooltip.style.left = clampedX+'px';
-    tooltip.style.top  = '8px';
-    tooltip.textContent = `${(best.d/1000).toFixed(2)} km · ${best.y} ${yUnit}`;
   }
 
-  draw(null);
-  window.addEventListener('resize', () => draw(currentX));
+  function setView(minD,maxD){
+    view={minD,maxD};
+    isZoomed=true;
+    resetBtn.style.display='inline-block';
+    draw();
+    globalZoom(minD,maxD);
+  }
 
-  // Mouse events on this canvas
-  canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    const xRel = e.clientX - rect.left;
-    const { gW } = dims();
-    if (xRel < PAD.l || xRel > PAD.l+gW) { clearSeek(); return; }
-    const distM = ((xRel-PAD.l)/gW)*maxD;
-    currentX = xRel;
-    draw(currentX);
-    // Show own tooltip
-    let best=data[0];
-    for (const p of data) if (Math.abs(p.d-distM)<Math.abs(best.d-distM)) best=p;
+  function resetView(){
+    view={minD:0,maxD:fullMaxD};
+    isZoomed=false;
+    currentDistM=null;
+    resetBtn.style.display='none';
+    draw();
+    globalZoomReset();
+  }
+
+  // ── Seek fn (called by globalSeek) ────────────────────────────────────────
+  function seekFn(distM){
+    currentDistM=distM;
+    draw();
+    if(distM===null||distM<view.minD||distM>view.maxD){
+      tooltip.style.display='none'; return;
+    }
+    const{gW}=dims();
+    const cx=xOf(distM,gW);
+    const visData=data.filter(p=>p.d>=view.minD&&p.d<=view.maxD);
+    let best=visData[0]||data[0];
+    for(const p of visData) if(Math.abs(p.d-distM)<Math.abs(best.d-distM)) best=p;
     tooltip.style.display='block';
-    const clampedX = Math.min(xRel+10, canvas.offsetWidth-120);
-    tooltip.style.left=clampedX+'px';
+    tooltip.style.left=Math.min(cx+10,canvas.offsetWidth-130)+'px';
     tooltip.style.top='8px';
     tooltip.textContent=`${(best.d/1000).toFixed(2)} km · ${best.y} ${yUnit}`;
-    globalSeek(distM, canvasId);
-  });
-  canvas.addEventListener('mouseleave', () => clearSeek());
+  }
 
-  return seekFn;
+  draw();
+  window.addEventListener('resize',draw);
+  resetBtn.addEventListener('click',resetView);
+
+  // ── Mouse events ──────────────────────────────────────────────────────────
+  canvas.addEventListener('mousedown',e=>{
+    if(e.button!==0) return;
+    const rect=canvas.getBoundingClientRect();
+    const xRel=e.clientX-rect.left;
+    const{gW}=dims();
+    if(xRel<PAD.l||xRel>PAD.l+gW) return;
+    isDragging=true; dragStart=xRel; dragCurrent=xRel;
+    canvas.style.cursor='col-resize';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove',e=>{
+    if(!isDragging) return;
+    const rect=canvas.getBoundingClientRect();
+    const xRel=Math.max(PAD.l,Math.min(e.clientX-rect.left,dims().gW+PAD.l));
+    dragCurrent=xRel;
+    draw();
+  });
+
+  window.addEventListener('mouseup',e=>{
+    if(!isDragging) return;
+    isDragging=false;
+    canvas.style.cursor='crosshair';
+    const{gW}=dims();
+    const x1=Math.min(dragStart,dragCurrent), x2=Math.max(dragStart,dragCurrent);
+    dragStart=null; dragCurrent=null;
+    // Minimum drag of 8px to count as zoom, not a click
+    if(x2-x1<8){ draw(); return; }
+    const minD=Math.max(0,dOfX(x1,gW));
+    const maxD=Math.min(fullMaxD,dOfX(x2,gW));
+    if(maxD>minD) setView(minD,maxD);
+    else draw();
+  });
+
+  canvas.addEventListener('mousemove',e=>{
+    if(isDragging) return;
+    const rect=canvas.getBoundingClientRect();
+    const xRel=e.clientX-rect.left;
+    const{gW}=dims();
+    if(xRel<PAD.l||xRel>PAD.l+gW){ clearSeek(); return; }
+    const distM=dOfX(xRel,gW);
+    currentDistM=distM;
+    draw();
+    // Show tooltip
+    const visData=data.filter(p=>p.d>=view.minD&&p.d<=view.maxD);
+    let best=visData[0]||data[0];
+    for(const p of visData) if(Math.abs(p.d-distM)<Math.abs(best.d-distM)) best=p;
+    tooltip.style.display='block';
+    tooltip.style.left=Math.min(xRel+10,canvas.offsetWidth-130)+'px';
+    tooltip.style.top='8px';
+    tooltip.textContent=`${(best.d/1000).toFixed(2)} km · ${best.y} ${yUnit}`;
+    globalSeek(distM,canvasId);
+  });
+
+  canvas.addEventListener('mouseleave',()=>{ if(!isDragging) clearSeek(); });
+  canvas.addEventListener('dblclick',resetView);
+  canvas.style.cursor='crosshair';
+
+  return { seekFn, resetView };
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
-(async () => {
-  const id = new URLSearchParams(location.search).get('id');
-  if (!id) { showError('No route ID. <a href="index.html">← Back</a>'); return; }
-  const index = await Store.loadIndex();
-  const route = index.find(r => r.id === id);
-  if (!route) { showError('Route not found. <a href="index.html">← Back</a>'); return; }
+(async()=>{
+  const id=new URLSearchParams(location.search).get('id');
+  if(!id){ showError('No route ID. <a href="index.html">← Back</a>'); return; }
+  const index=await Store.loadIndex();
+  const route=index.find(r=>r.id===id);
+  if(!route){ showError('Route not found. <a href="index.html">← Back</a>'); return; }
 
-  let points = [];
-  try {
-    const gpxText = await Store.loadGPX(id);
-    const parsed = GPXParser.parse(gpxText, route.name);
-    points = parsed.points;
-    const dlBtn = document.getElementById('dlGpxBtn');
-    dlBtn.style.display = '';
-    dlBtn.onclick = () => {
-      const blob = new Blob([gpxText],{type:'application/gpx+xml'});
-      const a = Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`${id}.gpx`});
+  let points=[];
+  try{
+    const gpxText=await Store.loadGPX(id);
+    const parsed=GPXParser.parse(gpxText,route.name);
+    points=parsed.points;
+    const dlBtn=document.getElementById('dlGpxBtn');
+    dlBtn.style.display='';
+    dlBtn.onclick=()=>{
+      const blob=new Blob([gpxText],{type:'application/gpx+xml'});
+      const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`${id}.gpx`});
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
     };
-  } catch(e) { console.warn('GPX load failed:',e.message); }
+  } catch(e){ console.warn('GPX load:',e.message); }
 
-  renderPage(route, points);
+  renderPage(route,points);
 })();
 
 // ── Render ────────────────────────────────────────────────────────────────────
-function renderPage(route, points) {
-  document.getElementById('stateMsg').style.display = 'none';
-  document.getElementById('pageContent').style.display = '';
+function renderPage(route,points){
+  document.getElementById('stateMsg').style.display='none';
+  document.getElementById('pageContent').style.display='';
 
-  const m = route.metrics;
-  const color = ACTIVITY_COLORS[route.type] || ACTIVITY_COLORS.other;
-  window._routeColor = color;
-  document.documentElement.style.setProperty('--route-color', color);
-  document.title = route.name + ' — Adventure Log';
-  document.getElementById('headerTitle').textContent = route.name;
-  const typeEl = document.getElementById('headerType');
-  typeEl.textContent = ACTIVITY_EMOJI[route.type]+' '+route.type;
-  typeEl.style.background = color+'22'; typeEl.style.color = color;
-  document.getElementById('routeTitle').textContent = route.name;
-  const dateStr = m?.startTime ? fmtDate(m.startTime) : '';
-  const ptStr = m?.pointCount ? m.pointCount.toLocaleString()+' GPS points' : '';
-  document.getElementById('routeSubtitle').textContent = [dateStr,ptStr].filter(Boolean).join(' · ');
+  const m=route.metrics;
+  const color=ACTIVITY_COLORS[route.type]||ACTIVITY_COLORS.other;
+  window._routeColor=color;
+  document.documentElement.style.setProperty('--route-color',color);
+  document.title=route.name+' — Adventure Log';
+  document.getElementById('headerTitle').textContent=route.name;
+  const typeEl=document.getElementById('headerType');
+  typeEl.textContent=ACTIVITY_EMOJI[route.type]+' '+route.type;
+  typeEl.style.background=color+'22'; typeEl.style.color=color;
+  document.getElementById('routeTitle').textContent=route.name;
+  const dateStr=m?.startTime?fmtDate(m.startTime):'';
+  const ptStr=m?.pointCount?m.pointCount.toLocaleString()+' GPS points':'';
+  document.getElementById('routeSubtitle').textContent=[dateStr,ptStr].filter(Boolean).join(' · ');
 
-  // ── Cards ──────────────────────────────────────────────────────────────────
-  const cards = [
-    { val:fmt(m?.distanceKm),                                       unit:'km',  lbl:'Distance',   accent:true },
-    { val:fmtTime(m?.movingTime),                                    unit:'',    lbl:'Moving Time'             },
-    { val:fmtSpeed(m?.distanceKm, m?.movingTime),                    unit:'',    lbl:'Avg Speed'               },
-    { val:m?.elevGain!=null?m.elevGain.toLocaleString():'—',        unit:'m',   lbl:'Ascent'                  },
-    { val:m?.elevLoss!=null?m.elevLoss.toLocaleString():'—',        unit:'m',   lbl:'Descent'                 },
+  // Cards
+  const cards=[
+    {val:fmt(m?.distanceKm),unit:'km',lbl:'Distance',accent:true},
+    {val:fmtTime(m?.movingTime),unit:'',lbl:'Moving Time'},
+    {val:fmtSpeed(m?.distanceKm,m?.movingTime),unit:'',lbl:'Avg Speed'},
+    {val:m?.elevGain!=null?m.elevGain.toLocaleString():'—',unit:'m',lbl:'Ascent'},
+    {val:m?.elevLoss!=null?m.elevLoss.toLocaleString():'—',unit:'m',lbl:'Descent'},
   ];
-  const grid = document.getElementById('metricsGrid');
-  cards.forEach(c => {
-    const card = document.createElement('div');
-    card.className = 'metric-card'+(c.accent?' accent':'');
-    card.innerHTML = `<div class="metric-val">${c.val}<span class="metric-unit">${c.unit?' '+c.unit:''}</span></div><div class="metric-lbl">${c.lbl}</div>`;
+  const grid=document.getElementById('metricsGrid');
+  cards.forEach(c=>{
+    const card=document.createElement('div');
+    card.className='metric-card'+(c.accent?' accent':'');
+    card.innerHTML=`<div class="metric-val">${c.val}<span class="metric-unit">${c.unit?' '+c.unit:''}</span></div><div class="metric-lbl">${c.lbl}</div>`;
     grid.appendChild(card);
   });
 
-  // ── Map ────────────────────────────────────────────────────────────────────
-  routeMap = L.map('routeMap',{zoomControl:true});
+  // Map
+  routeMap=L.map('routeMap',{zoomControl:true});
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom:19,
   }).addTo(routeMap);
 
-  const mapPoints = points.length >= 2 ? points : (m?.simplifiedPath||[]);
-  if (mapPoints.length >= 2) {
-    distIndex = buildDistIndex(mapPoints);
-    const totalDistM = distIndex[distIndex.length-1].distM;
-    const latlngs = mapPoints.map(p=>[p.lat,p.lon]);
-    const pl = L.polyline(latlngs,{color,weight:4,opacity:0.9}).addTo(routeMap);
+  const mapPoints=points.length>=2?points:(m?.simplifiedPath||[]);
+  if(mapPoints.length>=2){
+    distIndex=buildDistIndex(mapPoints);
+    const latlngs=mapPoints.map(p=>[p.lat,p.lon]);
+    const pl=L.polyline(latlngs,{color,weight:4,opacity:0.9}).addTo(routeMap);
     routeMap.fitBounds(pl.getBounds(),{padding:[30,30]});
     setTimeout(()=>routeMap.invalidateSize(),200);
 
-    // Start/end markers
     const mkIcon=(fill,border)=>L.divIcon({
       className:'',
       html:`<div style="width:12px;height:12px;background:${fill};border:2px solid ${border};border-radius:50%;box-shadow:0 0 6px ${fill}88"></div>`,
@@ -443,74 +532,72 @@ function renderPage(route, points) {
     L.marker(latlngs[0],{icon:mkIcon(color,'#fff')}).addTo(routeMap).bindTooltip('Start');
     L.marker(latlngs[latlngs.length-1],{icon:mkIcon('#fff',color)}).addTo(routeMap).bindTooltip('End');
 
-    // Hover on polyline → seek charts
-    pl.on('mousemove', e => {
-      // Find closest point by lat/lon
-      let bestDist = Infinity, bestIdx = 0;
-      distIndex.forEach((pt,i) => {
-        const d = haversine(e.latlng.lat,e.latlng.lng,pt.lat,pt.lon);
-        if (d < bestDist) { bestDist=d; bestIdx=i; }
+    pl.on('mousemove',e=>{
+      let bestDist=Infinity,bestIdx=0;
+      distIndex.forEach((pt,i)=>{
+        const d=haversine(e.latlng.lat,e.latlng.lng,pt.lat,pt.lon);
+        if(d<bestDist){bestDist=d;bestIdx=i;}
       });
-      globalSeek(distIndex[bestIdx].distM, 'map');
+      globalSeek(distIndex[bestIdx].distM,'map');
     });
-    pl.on('mouseout', () => clearSeek());
+    pl.on('mouseout',()=>clearSeek());
   } else {
-    document.getElementById('routeMap').innerHTML =
+    document.getElementById('routeMap').innerHTML=
       '<div style="height:460px;display:flex;align-items:center;justify-content:center;color:#7a849e;font-family:IBM Plex Mono,monospace">No GPS points to display</div>';
   }
 
-  // ── Elevation chart ────────────────────────────────────────────────────────
-  const elevProfile = m?.elevProfile;
-  if (elevProfile && elevProfile.length > 2) {
-    document.getElementById('elevSection').style.display = 'block';
-    const minE = Math.min(...elevProfile.map(p=>p.ele));
-    const maxE = Math.max(...elevProfile.map(p=>p.ele));
-    const fn = makeChart({
-      canvasId:'elevCanvas', tooltipId:'elevTooltip',
-      data: elevProfile.map(p=>({d:p.d,y:p.ele})),
-      color, yUnit:'m',
-      statsEl: document.getElementById('elevStats'),
-      statsHtml: `<span>↑ ${m.elevGain}m ascent</span><span>↓ ${m.elevLoss}m descent</span><span>${minE}–${maxE}m range</span>`,
+  // Elevation chart
+  const elevProfile=m?.elevProfile;
+  if(elevProfile&&elevProfile.length>2){
+    document.getElementById('elevSection').style.display='block';
+    const minE=Math.min(...elevProfile.map(p=>p.ele));
+    const maxE=Math.max(...elevProfile.map(p=>p.ele));
+    const chart=makeChart({
+      canvasId:'elevCanvas',tooltipId:'elevTooltip',resetBtnId:'elevReset',
+      data:elevProfile.map(p=>({d:p.d,y:p.ele})),
+      color,yUnit:'m',
+      statsEl:document.getElementById('elevStats'),
+      statsHtml:`<span>↑ ${m.elevGain}m</span><span>↓ ${m.elevLoss}m</span><span>${minE}–${maxE}m</span>`,
     });
-    if (fn) seekers.push({ id:'elevCanvas', fn });
+    if(chart) seekers.push({id:'elevCanvas',seekFn:chart.seekFn});
   }
 
-  // ── Speed chart ────────────────────────────────────────────────────────────
-  if (points.length >= 2) {
-    const speedProfile = buildSpeedProfile(points);
-    if (speedProfile.length > 2) {
-      document.getElementById('speedSection').style.display = 'block';
-      const speeds = speedProfile.map(p=>p.speed);
-      const avgSpd = Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length*10)/10;
-      const maxSpd = Math.max(...speeds).toFixed(1);
-      const fn = makeChart({
-        canvasId:'speedCanvas', tooltipId:'speedTooltip',
-        data: speedProfile.map(p=>({d:p.d,y:p.speed})),
-        color, yUnit:'km/h',
-        statsEl: document.getElementById('speedStats'),
-        statsHtml: `<span>avg ${avgSpd} km/h</span><span>max ${maxSpd} km/h</span>`,
+  // Speed chart
+  if(points.length>=2){
+    const speedProfile=buildSpeedProfile(points);
+    if(speedProfile.length>2){
+      document.getElementById('speedSection').style.display='block';
+      const speeds=speedProfile.map(p=>p.speed);
+      const avgSpd=Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length*10)/10;
+      const maxSpd=Math.max(...speeds).toFixed(1);
+      const chart=makeChart({
+        canvasId:'speedCanvas',tooltipId:'speedTooltip',resetBtnId:'speedReset',
+        data:speedProfile.map(p=>({d:p.d,y:p.speed})),
+        color,yUnit:'km/h',
+        statsEl:document.getElementById('speedStats'),
+        statsHtml:`<span>avg ${avgSpd} km/h</span><span>max ${maxSpd} km/h</span>`,
       });
-      if (fn) seekers.push({ id:'speedCanvas', fn });
+      if(chart) seekers.push({id:'speedCanvas',seekFn:chart.seekFn});
     }
   }
 
-  // ── Details table ──────────────────────────────────────────────────────────
+  // Details
   const rows=[
-    ['Date',          fmtDate(m?.startTime)],
-    ['Activity',      ACTIVITY_EMOJI[route.type]+' '+route.type],
-    ['Distance',      fmt(m?.distanceKm)+' km'],
-    ['Moving Time',   fmtTime(m?.movingTime)],
-    ['Total Time',    fmtTime(m?.totalTime)],
-    ['Average Speed', fmtSpeed(m?.distanceKm,m?.movingTime)],
-    ['Ascent',        m?.elevGain!=null?m.elevGain.toLocaleString()+' m':'—'],
-    ['Descent',       m?.elevLoss!=null?m.elevLoss.toLocaleString()+' m':'—'],
-    ['Max Elevation', m?.maxEle!=null?m.maxEle.toLocaleString()+' m':'—'],
-    ['Min Elevation', m?.minEle!=null?m.minEle.toLocaleString()+' m':'—'],
+    ['Date',fmtDate(m?.startTime)],
+    ['Activity',ACTIVITY_EMOJI[route.type]+' '+route.type],
+    ['Distance',fmt(m?.distanceKm)+' km'],
+    ['Moving Time',fmtTime(m?.movingTime)],
+    ['Total Time',fmtTime(m?.totalTime)],
+    ['Average Speed',fmtSpeed(m?.distanceKm,m?.movingTime)],
+    ['Ascent',m?.elevGain!=null?m.elevGain.toLocaleString()+' m':'—'],
+    ['Descent',m?.elevLoss!=null?m.elevLoss.toLocaleString()+' m':'—'],
+    ['Max Elevation',m?.maxEle!=null?m.maxEle.toLocaleString()+' m':'—'],
+    ['Min Elevation',m?.minEle!=null?m.minEle.toLocaleString()+' m':'—'],
     ['Avg Heart Rate',m?.avgHr?m.avgHr+' bpm':'—'],
-    ['GPS Points',    m?.pointCount?m.pointCount.toLocaleString():'—'],
-    ['GPX File',      `data/gpx/${route.id}.gpx`],
+    ['GPS Points',m?.pointCount?m.pointCount.toLocaleString():'—'],
+    ['GPX File',`data/gpx/${route.id}.gpx`],
   ];
-  const table = document.getElementById('detailsTable');
+  const table=document.getElementById('detailsTable');
   rows.forEach(([lbl,val])=>{
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${esc(lbl)}</td><td>${esc(String(val))}</td>`;
