@@ -195,6 +195,14 @@ function makeRouteItem(route) {
     </div>
     <span class="route-arrow">›</span>
   `;
+  item.addEventListener('mouseenter', () => {
+    const pl = polylines[route.id];
+    if (pl) { pl.setStyle({ weight:5, opacity:1 }); pl.bringToFront(); }
+  });
+  item.addEventListener('mouseleave', () => {
+    const pl = polylines[route.id];
+    if (pl) pl.setStyle({ weight:3, opacity:0.8 });
+  });
   item.addEventListener('click', () => { window.location.href = `route.html?id=${route.id}`; });
   return item;
 }
@@ -367,11 +375,11 @@ git push`;
 function closeCommitModal() { commitModal.classList.remove('open'); }
 
 function download(filename, content, mime) {
-  const blob = new Blob([content],{type:mime});
+  const blob = new Blob([content], { type: 'application/octet-stream' });
   const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'),{href:url,download:filename});
+  const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ── File handling ─────────────────────────────────────────────────────────────
