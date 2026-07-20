@@ -6,8 +6,8 @@
     "addedAt": "2026-07-18T14:30:58.582Z",
     "metrics": {
       "distanceKm": 84.6,
-      "elevGain": 0,
-      "elevLoss": 0,
+      "elevGain": 603,
+      "elevLoss": 597,
       "minEle": 4,
       "maxEle": 132,
       "movingTime": 19045,
@@ -12054,8 +12054,8 @@
     "addedAt": "2026-07-18T14:30:58.022Z",
     "metrics": {
       "distanceKm": 92.4,
-      "elevGain": 0,
-      "elevLoss": 0,
+      "elevGain": 288,
+      "elevLoss": 282,
       "minEle": 5,
       "maxEle": 98,
       "movingTime": 20128,
@@ -24880,8 +24880,8 @@
     "addedAt": "2026-07-18T14:30:57.425Z",
     "metrics": {
       "distanceKm": 105.6,
-      "elevGain": 0,
-      "elevLoss": 0,
+      "elevGain": 217,
+      "elevLoss": 290,
       "minEle": 1,
       "maxEle": 92,
       "movingTime": 24454,
