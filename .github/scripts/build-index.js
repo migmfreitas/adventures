@@ -26,10 +26,29 @@ const COLLECTIONS_FILE = path.join(__dirname, '../../data/collections.json');
 const VALID_TYPES = new Set(['bike', 'hike', 'kayak', 'run', 'other']);
 
 // ── Name helpers ──────────────────────────────────────────────────────────────
+// Small words that stay lowercase unless they're the first word
+const LOWERCASE_WORDS = new Set([
+  'a', 'à', 'ao', 'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na', 'nos', 'nas',
+  'e', 'o', 'os', 'as', 'um', 'uma', 'por', 'para', 'com', 'the', 'to', 'of', 'in',
+  'at', 'by', 'and', 'or', 'from',
+]);
+
 function toTitleCase(str) {
-  // Capitalize first letter of each word, but only after true word boundaries
-  // (spaces, hyphens, dashes) — not after accented chars like é, ã, ç etc.
-  return str.replace(/(^|[\s\-–])\S/g, c => c.toUpperCase());
+  return str
+    .split(/([\s\-–]+)/)
+    .map((part, i, arr) => {
+      if (/^[\s\-–]+$/.test(part)) return part;
+      const lower = part.toLowerCase();
+      const isFirst = arr.slice(0, i).every(p => /^[\s\-–]*$/.test(p));
+      if (isFirst || !LOWERCASE_WORDS.has(lower)) {
+        // Use spread to correctly handle multi-byte accented characters
+        const chars = [...lower];
+        chars[0] = chars[0].toUpperCase();
+        return chars.join('');
+      }
+      return lower;
+    })
+    .join('');
 }
 
 function filenameToName(filename) {
