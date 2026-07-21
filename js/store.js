@@ -36,9 +36,13 @@ const Store = {
   },
 
   async loadGPX(id) {
-    // id is now type/group/filename or type/filename
-    const res = await fetch(`data/gpx/${id}.gpx`);
-    if (!res.ok) throw new Error(`GPX file not found: data/gpx/${id}.gpx`);
+    const index = await this.loadIndex();
+    const route = index.find(r => r.id === id);
+    // Use stored gpxPath if available (preserves original filename with spaces/caps)
+    // otherwise fall back to constructing from id
+    const path = route?.gpxPath || `data/gpx/${id}.gpx`;
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`GPX file not found: ${path}`);
     return res.text();
   },
 };
