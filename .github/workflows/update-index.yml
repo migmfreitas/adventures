@@ -12,6 +12,9 @@ jobs:
     permissions:
       contents: write
 
+    # Skip if the website already updated index.json directly
+    if: "!startsWith(github.event.head_commit.message, 'Add route:')"
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
