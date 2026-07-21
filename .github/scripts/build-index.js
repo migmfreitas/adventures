@@ -186,9 +186,10 @@ function scanGpxFiles() {
 
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        const group = entry.name;
-        const groupName = folderToName(group);
-        const groupPath = path.join(typePath, group);
+        const isUngrouped = entry.name.toLowerCase() === 'ungrouped';
+        const group = isUngrouped ? null : entry.name;
+        const groupName = group ? folderToName(group) : null;
+        const groupPath = path.join(typePath, entry.name);
         const files = fs.readdirSync(groupPath)
           .filter(f => f.toLowerCase().endsWith('.gpx'))
           .sort((a, b) => filenameSortKey(a) - filenameSortKey(b) || a.localeCompare(b));
