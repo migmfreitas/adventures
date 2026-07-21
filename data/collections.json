@@ -4,4 +4,14 @@
     "name": "EuroVelo 1",
     "description": "10-day cycling tour along the Portuguese coast from Porto to Sagres, following the EuroVelo 1 Atlantic Coast route."
   }
+  {
+    "folder": "São Miguel",
+    "name": "São Miguel",
+    "description": "5-day hike, crossing São Miguel island, Azores"
+  }
+  {
+    "folder": "Viana to Porto",
+    "name": "Viana to Porto",
+    "description": "3-day hike from Viana do Castelo to Porto, following the Atlantic Coastline"
+  }
 ]
