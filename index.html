@@ -273,21 +273,5 @@
 <script src="js/gpx-parser.js"></script>
 <script src="js/store.js"></script>
 <script src="js/app.js"></script>
-<script>
-// Show/hide new group button in edit mode
-const _origRender = render;
-// Wire newGroupBtn visibility to editMode via render()
-document.getElementById('newGroupBtn').style.display = 'none';
-const __patchRender = setInterval(() => {
-  if (typeof render !== 'undefined') {
-    clearInterval(__patchRender);
-    const orig = render;
-    window.render = function() {
-      orig();
-      document.getElementById('newGroupBtn').style.display = editMode ? 'flex' : 'none';
-    };
-  }
-}, 50);
-</script>
 </body>
 </html>
