@@ -31,10 +31,17 @@ function toTitleCase(str) {
 
 function filenameToName(filename) {
   const base = path.basename(filename, '.gpx');
-  // Already has spaces — just apply Title Case
-  // Also handle dash-only names: dashes → spaces then Title Case
-  const spaced = base.includes(' ') ? base : base.replace(/-/g, ' ');
+  // Strip leading number prefix: "01 - Stage 1..." or "01. Stage 1..." → "Stage 1..."
+  const stripped = base.replace(/^\d+\s*[-–.\s]\s*/, '');
+  // Already has spaces — just Title Case; otherwise convert dashes to spaces
+  const spaced = stripped.includes(' ') ? stripped : stripped.replace(/-/g, ' ');
   return toTitleCase(spaced.trim());
+}
+
+function filenameSortKey(filename) {
+  const base = path.basename(filename, '.gpx');
+  const match = base.match(/^(\d+)/);
+  return match ? parseInt(match[1], 10) : Infinity;
 }
 
 function folderToName(folder) {
@@ -176,7 +183,9 @@ function scanGpxFiles() {
         const group = entry.name;
         const groupName = folderToName(group);
         const groupPath = path.join(typePath, group);
-        const files = fs.readdirSync(groupPath).filter(f=>f.toLowerCase().endsWith('.gpx')).sort();
+        const files = fs.readdirSync(groupPath)
+          .filter(f => f.toLowerCase().endsWith('.gpx'))
+          .sort((a, b) => filenameSortKey(a) - filenameSortKey(b) || a.localeCompare(b));
         console.log(`    Contents of ${group}/: ${files.length} GPX file(s)`);
         for (const file of files) {
           results.push({
@@ -234,14 +243,19 @@ async function main() {
     });
   }
 
-  // Sort by startTime descending
-  entries.sort((a,b)=>{
-    const ta=a.metrics.startTime||a.addedAt, tb=b.metrics.startTime||b.addedAt;
-    return new Date(tb)-new Date(ta);
+  // Grouped routes keep their numeric prefix order (already sorted above)
+  // Ungrouped routes sort by startTime descending (newest first)
+  const grouped   = entries.filter(e => e.group);
+  const ungrouped = entries.filter(e => !e.group).sort((a, b) => {
+    const ta = a.metrics.startTime || a.addedAt;
+    const tb = b.metrics.startTime || b.addedAt;
+    return new Date(tb) - new Date(ta);
   });
 
-  fs.writeFileSync(INDEX_FILE, JSON.stringify(entries,null,2));
-  console.log(`\nWrote ${entries.length} entries to data/index.json`);
+  const sorted = [...grouped, ...ungrouped];
+
+  fs.writeFileSync(INDEX_FILE, JSON.stringify(sorted, null, 2));
+  console.log(`\nWrote ${sorted.length} entries to data/index.json`);
 }
 
 main().catch(e=>{console.error(e);process.exit(1);});
