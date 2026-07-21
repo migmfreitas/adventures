@@ -120,20 +120,6 @@
       <div class="zoom-hint">drag to zoom · double-click to reset</div>
     </div>
 
-    <div class="profile-container" id="speedSection" style="display:none">
-      <div class="profile-header">
-        <div class="profile-title">Speed Profile</div>
-        <div class="profile-stats" id="speedStats">
-          <button class="reset-zoom" id="speedReset">↺ Reset zoom</button>
-        </div>
-      </div>
-      <div class="profile-wrap">
-        <canvas class="profile-canvas" id="speedCanvas"></canvas>
-        <div class="profile-tooltip" id="speedTooltip"></div>
-      </div>
-      <div class="zoom-hint">drag to zoom · double-click to reset</div>
-    </div>
-
     <div class="section-label">Details</div>
     <div class="details-card"><table id="detailsTable"></table></div>
   </div>
@@ -179,28 +165,6 @@ function seekPoint(distIndex,targetDistM){
   while(lo<hi){ const mid=(lo+hi)>>1; if(distIndex[mid].distM<targetDistM)lo=mid+1; else hi=mid; }
   if(lo>0&&Math.abs(distIndex[lo-1].distM-targetDistM)<Math.abs(distIndex[lo].distM-targetDistM)) return distIndex[lo-1];
   return distIndex[lo];
-}
-
-function buildSpeedProfile(points,maxSamples=500){
-  const timed=points.filter(p=>p.time);
-  if(timed.length<2)return[];
-  let distM=0; const raw=[];
-  for(let i=1;i<timed.length;i++){
-    const prev=timed[i-1],cur=timed[i];
-    const d=haversine(prev.lat,prev.lon,cur.lat,cur.lon);
-    const dt=(cur.time-prev.time)/1000;
-    distM+=d;
-    if(dt<=0)continue;
-    raw.push({d:distM,speed:Math.min((d/dt)*3.6,120)});
-  }
-  if(raw.length===0)return[];
-  const W=5;
-  const smoothed=raw.map((pt,i)=>{
-    const slice=raw.slice(Math.max(0,i-W),Math.min(raw.length,i+W+1));
-    return{d:Math.round(pt.d),speed:Math.round(slice.reduce((s,p)=>s+p.speed,0)/slice.length*10)/10};
-  });
-  const step=Math.max(1,Math.floor(smoothed.length/maxSamples));
-  return smoothed.filter((_,i)=>i%step===0);
 }
 
 // ── Shared seek / zoom state ──────────────────────────────────────────────────
@@ -571,28 +535,6 @@ function renderPage(route,points){
     if(chart){
       seekers.push({id:'elevCanvas',seekFn:chart.seekFn});
       zoomers.push({id:'elevCanvas',zoomFn:chart.zoomFn,resetFn:chart.resetFn});
-    }
-  }
-
-  // Speed chart
-  if(points.length>=2){
-    const speedProfile=buildSpeedProfile(points);
-    if(speedProfile.length>2){
-      document.getElementById('speedSection').style.display='block';
-      const speeds=speedProfile.map(p=>p.speed);
-      const avgSpd=Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length*10)/10;
-      const maxSpd=Math.max(...speeds).toFixed(1);
-      const chart=makeChart({
-        canvasId:'speedCanvas',tooltipId:'speedTooltip',resetBtnId:'speedReset',
-        data:speedProfile.map(p=>({d:p.d,y:p.speed})),
-        color,yUnit:'km/h',
-        statsEl:document.getElementById('speedStats'),
-        statsHtml:`<span>avg ${avgSpd} km/h</span><span>max ${maxSpd} km/h</span>`,
-      });
-      if(chart){
-        seekers.push({id:'speedCanvas',seekFn:chart.seekFn});
-        zoomers.push({id:'speedCanvas',zoomFn:chart.zoomFn,resetFn:chart.resetFn});
-      }
     }
   }
 
