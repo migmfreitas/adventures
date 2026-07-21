@@ -40,4 +40,3 @@ jobs:
           git add data/index.json
           git diff --cached --quiet || git commit -m "chore: rebuild index.json"
           git push
-
