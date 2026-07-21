@@ -230,7 +230,7 @@ async function main() {
   console.log(`Found ${gpxFiles.length} GPX file(s)`);
 
   const entries = [];
-  for (const {type,group,groupName,file,id,name} of gpxFiles) {
+  for (const {type,group,groupName,file,id,gpxPath,name} of gpxFiles) {
     let metrics;
     try {
       const text = fs.readFileSync(file,'utf8');
