@@ -281,7 +281,7 @@ async function main() {
 
     entries.push({
       id,
-      name:        existingMap[id]?.name || name,
+      name,
       type,
       group:       group || null,
       groupName:   resolvedGroupName || null,
