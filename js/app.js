@@ -298,42 +298,51 @@ function makeGroupItem(group, members, gi) {
 // ── Drag-to-reorder ───────────────────────────────────────────────────────────
 function enableDragSort(container, type, group) {
   container.addEventListener('dragstart', e => {
-    dragSrcEl = e.target.closest('[data-id],[data-group-id]');
-    if (!dragSrcEl) return;
+    const item = e.target.closest('.route-item, .group-item');
+    if (!item) return;
+    dragSrcEl = item;
     e.dataTransfer.effectAllowed = 'move';
-    setTimeout(()=>dragSrcEl.style.opacity='0.4', 0);
+    e.dataTransfer.setData('text/plain', item.dataset.id || item.dataset.groupId || '');
+    setTimeout(() => item.style.opacity = '0.4', 0);
   });
-  container.addEventListener('dragend', () => {
-    if (dragSrcEl) dragSrcEl.style.opacity='';
+  container.addEventListener('dragend', e => {
+    const item = e.target.closest('.route-item, .group-item');
+    if (item) item.style.opacity = '';
+    container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
     dragSrcEl = null;
-    container.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
   });
   container.addEventListener('dragover', e => {
-    e.preventDefault(); e.dataTransfer.dropEffect='move';
-    const target = e.target.closest('[data-id],[data-group-id]');
-    container.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
-    if (target && target!==dragSrcEl) target.classList.add('drag-over');
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const target = e.target.closest('.route-item, .group-item');
+    container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    if (target && target !== dragSrcEl) target.classList.add('drag-over');
+  });
+  container.addEventListener('dragleave', e => {
+    if (!container.contains(e.relatedTarget))
+      container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
   });
   container.addEventListener('drop', e => {
     e.preventDefault();
-    const target = e.target.closest('[data-id],[data-group-id]');
-    if (!target||!dragSrcEl||target===dragSrcEl) return;
-    target.classList.remove('drag-over');
+    e.stopPropagation();
+    container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    const target = e.target.closest('.route-item, .group-item');
+    if (!target || !dragSrcEl || target === dragSrcEl) return;
 
-    if (type==='route' && group) {
-      // Reorder within group
-      const srcId  = dragSrcEl.dataset.id;
-      const tgtId  = target.dataset.id;
-      const arr    = group.routes;
-      const si     = arr.indexOf(srcId), ti = arr.indexOf(tgtId);
-      if (si>=0&&ti>=0) { arr.splice(si,1); arr.splice(ti,0,srcId); markDirty(); render(); }
-    } else if (type==='group') {
-      // Reorder groups list
+    if (type === 'route' && group) {
+      const srcId = dragSrcEl.dataset.id;
+      const tgtId = target.dataset.id;
+      if (!srcId || !tgtId) return;
+      const arr = group.routes;
+      const si = arr.indexOf(srcId), ti = arr.indexOf(tgtId);
+      if (si >= 0 && ti >= 0) { arr.splice(si, 1); arr.splice(ti, 0, srcId); markDirty(); render(); }
+    } else if (type === 'group') {
       const srcId = dragSrcEl.dataset.groupId;
       const tgtId = target.dataset.groupId;
-      const si    = groups.findIndex(g=>g.id===srcId);
-      const ti    = groups.findIndex(g=>g.id===tgtId);
-      if (si>=0&&ti>=0) { const [g]=groups.splice(si,1); groups.splice(ti,0,g); markDirty(); render(); }
+      if (!srcId || !tgtId) return;
+      const si = groups.findIndex(g => g.id === srcId);
+      const ti = groups.findIndex(g => g.id === tgtId);
+      if (si >= 0 && ti >= 0) { const [g] = groups.splice(si, 1); groups.splice(ti, 0, g); markDirty(); render(); }
     }
   });
 }
