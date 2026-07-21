@@ -3,8 +3,8 @@
  */
 
 const ACTIVITY_COLORS = {
-  bike:  '#e07840', hike:  '#52c97a',
-  kayak: '#4a9eff', run:   '#f5c842', other: '#b48aff',
+  bike:  '#9b59b6', hike:  '#e07840',
+  kayak: '#e74c3c', run:   '#f5c842', other: '#4a9eff',
 };
 const ACTIVITY_EMOJI = { bike:'🚴', hike:'🥾', kayak:'🛶', run:'🏃', other:'✦' };
 
@@ -116,7 +116,7 @@ function renderGroupOpen(list, filtered) {
   wrap.className = 'group-item';
   wrap.innerHTML = `
     <div class="group-header open" style="cursor:default">
-      <span class="group-icon">📁</span>
+      <span class="group-icon">${ACTIVITY_EMOJI[group.type] || '✦'}</span>
       <div class="group-info">
         <div class="group-name">${esc(group.name)}</div>
         <div class="group-meta">${stats.count} routes</div>
@@ -146,8 +146,12 @@ function makeRouteItem(route) {
   const gain  = route.metrics?.elevGain ?? null;
   const date  = route.metrics?.startTime
     ? new Date(route.metrics.startTime).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '';
+  const isGrouped = !!route.group;
   item.innerHTML = `
-    <div class="route-dot" style="background:${color}"></div>
+    ${isGrouped
+      ? `<div class="route-dot" style="background:${color}"></div>`
+      : `<span class="route-emoji">${ACTIVITY_EMOJI[route.type] || '✦'}</span>`
+    }
     <div class="route-info">
       <div class="route-name">${esc(route.name)}</div>
       <div class="route-meta">${km} km${gain ? ' · ↑'+gain+'m' : ''}${date ? ' · '+date : ''}</div>
@@ -176,7 +180,7 @@ function makeGroupItem(group, members) {
   el.dataset.groupId = group.id;
   el.innerHTML = `
     <div class="group-header" data-group-id="${esc(group.id)}">
-      <span class="group-icon">📁</span>
+      <span class="group-icon">${ACTIVITY_EMOJI[group.type] || '✦'}</span>
       <div class="group-info">
         <div class="group-name">${esc(group.name)}</div>
         <div class="group-meta">${members.length} routes · ${fmtKm(stats.km)} km</div>
