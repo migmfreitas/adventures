@@ -27,7 +27,9 @@ const VALID_TYPES = new Set(['bike', 'hike', 'kayak', 'run', 'other']);
 
 // ── Name helpers ──────────────────────────────────────────────────────────────
 function toTitleCase(str) {
-  return str.replace(/\b\w/g, c => c.toUpperCase());
+  // Capitalize first letter of each word, but only after true word boundaries
+  // (spaces, hyphens, dashes) — not after accented chars like é, ã, ç etc.
+  return str.replace(/(^|[\s\-–])\S/g, c => c.toUpperCase());
 }
 
 function filenameToName(filename) {
