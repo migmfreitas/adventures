@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 /**
  * build-index.js
- * Reads every .gpx file in data/gpx/, parses it, and writes data/index.json.
- * Filename convention: <type>-<name-with-dashes>.gpx
- *   e.g. bike-sintra-coastal-loop.gpx  → type: bike, name: Sintra Coastal Loop
- *        hike-serra-da-estrela.gpx     → type: hike, name: Serra Da Estrela
- *        my-random-ride.gpx            → type: other, name: My Random Ride
  *
- * Preserves existing index entries so previously-computed IDs stay stable.
- * Only re-parses files that are new or changed (by comparing mtime).
+ * Folder structure drives everything:
+ *   data/gpx/<type>/<group>/<filename>.gpx   → grouped route
+ *   data/gpx/<type>/<filename>.gpx           → ungrouped route
+ *
+ * Valid types: bike, hike, kayak, run, other
+ *
+ * Filename → name:
+ *   stage-1---porto-to-vagueira.gpx  →  "Stage 1 - Porto To Vagueira"
+ *   (triple dash becomes " - ", remaining dashes become spaces, Title Case)
+ *
+ * Group name: folder name, dashes→spaces, Title Case
+ *   eurovelo-1-portugal  →  "Eurovelo 1 Portugal"
  */
 
 const fs   = require('fs');
@@ -17,60 +22,56 @@ const path = require('path');
 const GPX_DIR    = path.join(__dirname, '../../data/gpx');
 const INDEX_FILE = path.join(__dirname, '../../data/index.json');
 
-const VALID_TYPES = ['bike', 'hike', 'kayak', 'run', 'other'];
+const VALID_TYPES = new Set(['bike', 'hike', 'kayak', 'run', 'other']);
 
-// ── Filename parser ────────────────────────────────────────────────────────────
-function parseFilename(filename) {
-  const base = path.basename(filename, '.gpx');
-  const parts = base.split('-');
-  let type = 'other';
-  let nameParts = parts;
-
-  if (VALID_TYPES.includes(parts[0].toLowerCase())) {
-    type = parts[0].toLowerCase();
-    nameParts = parts.slice(1);
-  }
-
-  const name = nameParts
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ') || base;
-
-  // Use the filename stem as the stable ID (minus extension)
-  const id = base;
-
-  return { id, name, type };
+// ── Name helpers ──────────────────────────────────────────────────────────────
+function toTitleCase(str) {
+  return str.replace(/\b\w/g, c => c.toUpperCase());
 }
 
-// ── GPX parser (mirrors the browser-side logic) ───────────────────────────────
+function filenameToName(filename) {
+  const base = path.basename(filename, '.gpx');
+  // Triple dash → " - "
+  const withDash = base.replace(/---/g, ' - ');
+  // Remaining dashes → space
+  const spaced = withDash.replace(/-/g, ' ');
+  return toTitleCase(spaced.trim());
+}
+
+function folderToName(folder) {
+  return toTitleCase(folder.replace(/-/g, ' '));
+}
+
+function makeId(type, group, filename) {
+  const base = path.basename(filename, '.gpx');
+  const parts = [type, group, base].filter(Boolean);
+  return parts.join('/').replace(/[^a-z0-9/._-]/gi, '-').toLowerCase();
+}
+
+// ── GPX parser ────────────────────────────────────────────────────────────────
 const { DOMParser } = require('@xmldom/xmldom');
 
 function parseGPX(text, filename) {
   const parser = new DOMParser();
   const xml = parser.parseFromString(text, 'application/xml');
-
   let points = extractPoints(xml, 'trkpt');
   if (points.length === 0) points = extractPoints(xml, 'rtept');
   if (points.length === 0) throw new Error('No track points found in ' + filename);
-
   return computeMetrics(points);
 }
 
 function extractPoints(xml, tag) {
-  const pts = [];
-  const els = xml.getElementsByTagName(tag);
+  const pts = [], els = xml.getElementsByTagName(tag);
   for (let i = 0; i < els.length; i++) {
     const el = els[i];
     const lat = parseFloat(el.getAttribute('lat'));
     const lon = parseFloat(el.getAttribute('lon'));
     if (isNaN(lat) || isNaN(lon)) continue;
-
     const eleEl  = el.getElementsByTagName('ele')[0];
     const timeEl = el.getElementsByTagName('time')[0];
     const hrEl   = el.getElementsByTagName('hr')[0] || el.getElementsByTagName('heartrate')[0];
-
     pts.push({
-      lat,
-      lon,
+      lat, lon,
       ele:  eleEl  ? parseFloat(eleEl.textContent)  : null,
       time: timeEl ? new Date(timeEl.textContent)    : null,
       hr:   hrEl   ? parseInt(hrEl.textContent)      : null,
@@ -81,156 +82,164 @@ function extractPoints(xml, tag) {
 
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 +
-    Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  const dLat = (lat2-lat1)*Math.PI/180, dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 function computeMetrics(points) {
-  let distanceM = 0, elevGain = 0, elevLoss = 0;
-  let minEle = Infinity, maxEle = -Infinity;
-  let movingMs = 0, hrSum = 0, hrCount = 0;
-  let minLat = Infinity, maxLat = -Infinity;
-  let minLon = Infinity, maxLon = -Infinity;
+  let distanceM=0, elevGain=0, elevLoss=0;
+  let minEle=Infinity, maxEle=-Infinity;
+  let movingMs=0, hrSum=0, hrCount=0;
+  let minLat=Infinity, maxLat=-Infinity, minLon=Infinity, maxLon=-Infinity;
 
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    if (p.lat < minLat) minLat = p.lat;
-    if (p.lat > maxLat) maxLat = p.lat;
-    if (p.lon < minLon) minLon = p.lon;
-    if (p.lon > maxLon) maxLon = p.lon;
-    if (p.ele !== null) {
-      if (p.ele < minEle) minEle = p.ele;
-      if (p.ele > maxEle) maxEle = p.ele;
-    }
-    if (p.hr !== null) { hrSum += p.hr; hrCount++; }
-    if (i === 0) continue;
-
-    const prev = points[i-1];
-    const d = haversine(prev.lat, prev.lon, p.lat, p.lon);
-    distanceM += d;
-
-    if (p.ele !== null && prev.ele !== null) {
-      const dEle = p.ele - prev.ele;
-      if (dEle > 0) elevGain += dEle;
-      else          elevLoss += Math.abs(dEle);
-    }
-
-    if (p.time && prev.time) {
-      const dt = (p.time - prev.time) / 1000;
-      if (d / dt > 0.14) movingMs += dt * 1000;
-    }
+  for (let i=0; i<points.length; i++) {
+    const p=points[i];
+    if(p.lat<minLat)minLat=p.lat; if(p.lat>maxLat)maxLat=p.lat;
+    if(p.lon<minLon)minLon=p.lon; if(p.lon>maxLon)maxLon=p.lon;
+    if(p.ele!==null){ if(p.ele<minEle)minEle=p.ele; if(p.ele>maxEle)maxEle=p.ele; }
+    if(p.hr!==null){ hrSum+=p.hr; hrCount++; }
+    if(i===0) continue;
+    const prev=points[i-1];
+    const d=haversine(prev.lat,prev.lon,p.lat,p.lon);
+    distanceM+=d;
+    if(p.ele!==null&&prev.ele!==null){ const dEle=p.ele-prev.ele; if(dEle>0)elevGain+=dEle; else elevLoss+=Math.abs(dEle); }
+    if(p.time&&prev.time){ const dt=(p.time-prev.time)/1000; if(d/dt>0.14)movingMs+=dt*1000; }
   }
 
-  const distanceKm = distanceM / 1000;
-  const totalMs = points[0]?.time && points[points.length-1]?.time
-    ? points[points.length-1].time - points[0].time : null;
+  const distanceKm = distanceM/1000;
+  const totalMs = points[0]?.time&&points[points.length-1]?.time ? points[points.length-1].time-points[0].time : null;
 
-  // Elevation profile — full resolution using running distance accumulator
-  // Capped at 2000 points to keep index.json reasonable in size
-  const MAX_PROFILE = 2000;
-  const elevRaw = [];
-  let runDist = 0;
-  for (let i = 0; i < points.length; i++) {
-    if (i > 0) runDist += haversine(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
-    if (points[i].ele !== null) elevRaw.push({ d: Math.round(runDist), ele: Math.round(points[i].ele) });
+  // Elevation profile (up to 2000 samples)
+  const MAX_PROFILE=2000;
+  const elevRaw=[];
+  let runDist=0;
+  for(let i=0;i<points.length;i++){
+    if(i>0) runDist+=haversine(points[i-1].lat,points[i-1].lon,points[i].lat,points[i].lon);
+    if(points[i].ele!==null) elevRaw.push({d:Math.round(runDist),ele:Math.round(points[i].ele)});
   }
-  const elevStep = Math.max(1, Math.floor(elevRaw.length / MAX_PROFILE));
-  const elevProfile = elevRaw.filter((_, i) => i % elevStep === 0);
-
-  const simplifiedPath = simplify(points, 0.00001);
+  const elevStep=Math.max(1,Math.floor(elevRaw.length/MAX_PROFILE));
+  const elevProfile=elevRaw.filter((_,i)=>i%elevStep===0);
 
   return {
-    distanceKm:    Math.round(distanceKm * 10) / 10,
-    elevGain:      Math.round(elevGain),
-    elevLoss:      Math.round(elevLoss),
-    minEle:        minEle === Infinity  ? null : Math.round(minEle),
-    maxEle:        maxEle === -Infinity ? null : Math.round(maxEle),
-    movingTime:    movingMs > 0 ? Math.round(movingMs / 1000) : null,
-    totalTime:     totalMs  ? Math.round(totalMs / 1000) : null,
-    avgHr:         hrCount > 0 ? Math.round(hrSum / hrCount) : null,
-    pointCount:    points.length,
-    startTime:     points[0]?.time || null,
-    bounds:        { minLat, maxLat, minLon, maxLon },
+    distanceKm:  Math.round(distanceKm*10)/10,
+    elevGain:    Math.round(elevGain),
+    elevLoss:    Math.round(elevLoss),
+    minEle:      minEle===Infinity?null:Math.round(minEle),
+    maxEle:      maxEle===-Infinity?null:Math.round(maxEle),
+    movingTime:  movingMs>0?Math.round(movingMs/1000):null,
+    totalTime:   totalMs?Math.round(totalMs/1000):null,
+    avgHr:       hrCount>0?Math.round(hrSum/hrCount):null,
+    pointCount:  points.length,
+    startTime:   points[0]?.time||null,
+    bounds:      {minLat,maxLat,minLon,maxLon},
     elevProfile,
-    simplifiedPath,
+    simplifiedPath: simplify(points,0.00001),
   };
 }
 
-function simplify(points, epsilon) {
-  if (points.length <= 2) return points;
-  let dmax = 0, idx = 0;
-  const end = points.length - 1;
-  for (let i = 1; i < end; i++) {
-    const d = perpDist(points[i], points[0], points[end]);
-    if (d > dmax) { dmax = d; idx = i; }
-  }
-  if (dmax > epsilon) {
-    const l = simplify(points.slice(0, idx+1), epsilon);
-    const r = simplify(points.slice(idx), epsilon);
-    return [...l.slice(0,-1), ...r];
-  }
-  return [points[0], points[end]];
+function simplify(points,epsilon){
+  if(points.length<=2)return points;
+  let dmax=0,idx=0;
+  const end=points.length-1;
+  for(let i=1;i<end;i++){ const d=perpDist(points[i],points[0],points[end]); if(d>dmax){dmax=d;idx=i;} }
+  if(dmax>epsilon){ const l=simplify(points.slice(0,idx+1),epsilon),r=simplify(points.slice(idx),epsilon); return[...l.slice(0,-1),...r]; }
+  return[points[0],points[end]];
+}
+function perpDist(pt,a,b){
+  const dx=b.lon-a.lon,dy=b.lat-a.lat;
+  if(dx===0&&dy===0)return Math.sqrt((pt.lon-a.lon)**2+(pt.lat-a.lat)**2);
+  const t=((pt.lon-a.lon)*dx+(pt.lat-a.lat)*dy)/(dx*dx+dy*dy);
+  return Math.sqrt((pt.lon-a.lon-t*dx)**2+(pt.lat-a.lat-t*dy)**2);
 }
 
-function perpDist(pt, a, b) {
-  const dx = b.lon - a.lon, dy = b.lat - a.lat;
-  if (dx === 0 && dy === 0) return Math.sqrt((pt.lon-a.lon)**2 + (pt.lat-a.lat)**2);
-  const t = ((pt.lon-a.lon)*dx + (pt.lat-a.lat)*dy) / (dx*dx + dy*dy);
-  return Math.sqrt((pt.lon-a.lon-t*dx)**2 + (pt.lat-a.lat-t*dy)**2);
+// ── Scan folder structure ─────────────────────────────────────────────────────
+function scanGpxFiles() {
+  // Returns [{type, group, groupName, file, id, name}]
+  const results = [];
+
+  if (!fs.existsSync(GPX_DIR)) { console.warn('data/gpx/ not found'); return results; }
+
+  const typeDirs = fs.readdirSync(GPX_DIR, {withFileTypes:true})
+    .filter(d => d.isDirectory() && VALID_TYPES.has(d.name));
+
+  for (const typeDir of typeDirs) {
+    const type = typeDir.name;
+    const typePath = path.join(GPX_DIR, type);
+    const entries = fs.readdirSync(typePath, {withFileTypes:true});
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        // Grouped routes
+        const group = entry.name;
+        const groupName = folderToName(group);
+        const groupPath = path.join(typePath, group);
+        const files = fs.readdirSync(groupPath).filter(f=>f.toLowerCase().endsWith('.gpx')).sort();
+        for (const file of files) {
+          results.push({
+            type, group, groupName,
+            file: path.join(groupPath, file),
+            id:   makeId(type, group, file),
+            name: filenameToName(file),
+          });
+        }
+      } else if (entry.name.toLowerCase().endsWith('.gpx')) {
+        // Ungrouped routes directly in type folder
+        results.push({
+          type, group: null, groupName: null,
+          file: path.join(typePath, entry.name),
+          id:   makeId(type, null, entry.name),
+          name: filenameToName(entry.name),
+        });
+      }
+    }
+  }
+
+  return results;
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
-  // Load existing index so we can preserve addedAt timestamps
+  // Load existing to preserve addedAt and any manual name overrides
   let existing = [];
   if (fs.existsSync(INDEX_FILE)) {
-    try { existing = JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8')); } catch {}
+    try { existing = JSON.parse(fs.readFileSync(INDEX_FILE,'utf8')); } catch {}
   }
-  const existingMap = Object.fromEntries(existing.map(r => [r.id, r]));
+  const existingMap = Object.fromEntries(existing.map(r=>[r.id,r]));
 
-  const gpxFiles = fs.readdirSync(GPX_DIR)
-    .filter(f => f.toLowerCase().endsWith('.gpx'))
-    .sort();
-
+  const gpxFiles = scanGpxFiles();
   console.log(`Found ${gpxFiles.length} GPX file(s)`);
 
   const entries = [];
-
-  for (const file of gpxFiles) {
-    const { id, name, type } = parseFilename(file);
-    const gpxPath = path.join(GPX_DIR, file);
-    const text = fs.readFileSync(gpxPath, 'utf8');
-
+  for (const {type,group,groupName,file,id,name} of gpxFiles) {
     let metrics;
     try {
-      metrics = parseGPX(text, file);
-      console.log(`  ✓ ${file} → ${name} (${type}) — ${metrics.distanceKm} km`);
-    } catch (e) {
-      console.error(`  ✗ ${file}: ${e.message}`);
+      const text = fs.readFileSync(file,'utf8');
+      metrics = parseGPX(text, path.basename(file));
+      console.log(`  ✓ ${path.relative(GPX_DIR,file)} → ${name} (${type}${groupName?' / '+groupName:''}) — ${metrics.distanceKm} km`);
+    } catch(e) {
+      console.error(`  ✗ ${path.relative(GPX_DIR,file)}: ${e.message}`);
       continue;
     }
-
     entries.push({
       id,
-      name:    existingMap[id]?.name    || name,   // preserve manual renames
-      type:    existingMap[id]?.type    || type,   // preserve manual type changes
-      addedAt: existingMap[id]?.addedAt || new Date().toISOString(),
+      name:      existingMap[id]?.name    || name,
+      type,
+      group:     group     || null,
+      groupName: groupName || null,
+      addedAt:   existingMap[id]?.addedAt || new Date().toISOString(),
       metrics,
     });
   }
 
-  // Sort newest first (by startTime, fall back to addedAt)
-  entries.sort((a, b) => {
-    const ta = a.metrics.startTime || a.addedAt;
-    const tb = b.metrics.startTime || b.addedAt;
-    return new Date(tb) - new Date(ta);
+  // Sort by startTime descending
+  entries.sort((a,b)=>{
+    const ta=a.metrics.startTime||a.addedAt, tb=b.metrics.startTime||b.addedAt;
+    return new Date(tb)-new Date(ta);
   });
 
-  fs.writeFileSync(INDEX_FILE, JSON.stringify(entries, null, 2));
+  fs.writeFileSync(INDEX_FILE, JSON.stringify(entries,null,2));
   console.log(`\nWrote ${entries.length} entries to data/index.json`);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch(e=>{console.error(e);process.exit(1);});
