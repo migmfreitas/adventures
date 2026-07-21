@@ -20,15 +20,21 @@ const Store = {
     }
   },
 
-  /** Derive groups from index entries */
+  /** Derive groups from index entries, preserving collections.json order */
   async loadGroups() {
     const routes = await this.loadIndex();
-    const seen   = new Map(); // groupId → {id, name, routes[]}
+    const seen   = new Map();
     for (const r of routes) {
       if (!r.group) continue;
       const key = r.type + '/' + r.group;
       if (!seen.has(key)) {
-        seen.set(key, { id: key, name: r.groupName || r.group, type: r.type, routes: [] });
+        seen.set(key, {
+          id:          key,
+          name:        r.groupName || r.group,
+          description: r.description || '',
+          type:        r.type,
+          routes:      [],
+        });
       }
       seen.get(key).routes.push(r.id);
     }
