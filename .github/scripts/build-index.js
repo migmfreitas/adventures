@@ -160,21 +160,25 @@ function scanGpxFiles() {
 
   if (!fs.existsSync(GPX_DIR)) { console.warn('data/gpx/ not found'); return results; }
 
-  const typeDirs = fs.readdirSync(GPX_DIR, {withFileTypes:true})
-    .filter(d => d.isDirectory() && VALID_TYPES.has(d.name));
+  const allEntries = fs.readdirSync(GPX_DIR, {withFileTypes:true});
+  console.log('Contents of data/gpx/:', allEntries.map(e => e.name + (e.isDirectory() ? '/' : '')));
+
+  const typeDirs = allEntries.filter(d => d.isDirectory() && VALID_TYPES.has(d.name.toLowerCase()));
+  console.log('Type dirs found:', typeDirs.map(d => d.name));
 
   for (const typeDir of typeDirs) {
-    const type = typeDir.name;
-    const typePath = path.join(GPX_DIR, type);
+    const type = typeDir.name.toLowerCase();
+    const typePath = path.join(GPX_DIR, typeDir.name);
     const entries = fs.readdirSync(typePath, {withFileTypes:true});
+    console.log(`  Contents of ${typeDir.name}/:`, entries.map(e => e.name + (e.isDirectory() ? '/' : '')));
 
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        // Grouped routes
         const group = entry.name;
         const groupName = folderToName(group);
         const groupPath = path.join(typePath, group);
         const files = fs.readdirSync(groupPath).filter(f=>f.toLowerCase().endsWith('.gpx')).sort();
+        console.log(`    Contents of ${group}/: ${files.length} GPX file(s)`);
         for (const file of files) {
           results.push({
             type, group, groupName,
@@ -184,7 +188,6 @@ function scanGpxFiles() {
           });
         }
       } else if (entry.name.toLowerCase().endsWith('.gpx')) {
-        // Ungrouped routes directly in type folder
         results.push({
           type, group: null, groupName: null,
           file: path.join(typePath, entry.name),
