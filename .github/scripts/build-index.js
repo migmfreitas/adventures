@@ -31,10 +31,9 @@ function toTitleCase(str) {
 
 function filenameToName(filename) {
   const base = path.basename(filename, '.gpx');
-  // Triple dash → " - "
-  const withDash = base.replace(/---/g, ' - ');
-  // Remaining dashes → space
-  const spaced = withDash.replace(/-/g, ' ');
+  // Already has spaces — just apply Title Case
+  // Also handle dash-only names: dashes → spaces then Title Case
+  const spaced = base.includes(' ') ? base : base.replace(/-/g, ' ');
   return toTitleCase(spaced.trim());
 }
 
