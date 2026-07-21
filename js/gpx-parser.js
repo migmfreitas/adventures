@@ -72,7 +72,6 @@ const GPXParser = {
     let minLat = Infinity, maxLat = -Infinity;
     let minLon = Infinity, maxLon = -Infinity;
 
-    const smoothedElev = this._smoothedElevArray(points);
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
 
