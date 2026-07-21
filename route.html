@@ -29,7 +29,7 @@
     .route-title { font-size: 28px; font-weight: 600; margin-bottom: 6px; }
     .route-subtitle { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); }
 
-    .metrics-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 28px; }
+    .metrics-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 28px; }
     .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
     .metric-card.accent { border-color: var(--route-color, var(--accent)); }
     .metric-val { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 600; white-space: nowrap; }
@@ -77,7 +77,7 @@
 
     @media (max-width: 700px) {
       .route-title { font-size: 20px; }
-      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+      .metrics-grid { grid-template-columns: repeat(3, 1fr); }
       #routeMap { height: 300px; }
       .profile-stats { gap: 8px; font-size: 11px; }
     }
@@ -116,6 +116,20 @@
       <div class="profile-wrap">
         <canvas class="profile-canvas" id="elevCanvas"></canvas>
         <div class="profile-tooltip" id="elevTooltip"></div>
+      </div>
+      <div class="zoom-hint">drag to zoom · double-click to reset</div>
+    </div>
+
+    <div class="profile-container" id="speedSection" style="display:none">
+      <div class="profile-header">
+        <div class="profile-title">Speed Profile</div>
+        <div class="profile-stats" id="speedStats">
+          <button class="reset-zoom" id="speedReset">↺ Reset zoom</button>
+        </div>
+      </div>
+      <div class="profile-wrap">
+        <canvas class="profile-canvas" id="speedCanvas"></canvas>
+        <div class="profile-tooltip" id="speedTooltip"></div>
       </div>
       <div class="zoom-hint">drag to zoom · double-click to reset</div>
     </div>
@@ -165,6 +179,28 @@ function seekPoint(distIndex,targetDistM){
   while(lo<hi){ const mid=(lo+hi)>>1; if(distIndex[mid].distM<targetDistM)lo=mid+1; else hi=mid; }
   if(lo>0&&Math.abs(distIndex[lo-1].distM-targetDistM)<Math.abs(distIndex[lo].distM-targetDistM)) return distIndex[lo-1];
   return distIndex[lo];
+}
+
+function buildSpeedProfile(points,maxSamples=500){
+  const timed=points.filter(p=>p.time);
+  if(timed.length<2)return[];
+  let distM=0; const raw=[];
+  for(let i=1;i<timed.length;i++){
+    const prev=timed[i-1],cur=timed[i];
+    const d=haversine(prev.lat,prev.lon,cur.lat,cur.lon);
+    const dt=(cur.time-prev.time)/1000;
+    distM+=d;
+    if(dt<=0)continue;
+    raw.push({d:distM,speed:Math.min((d/dt)*3.6,120)});
+  }
+  if(raw.length===0)return[];
+  const W=5;
+  const smoothed=raw.map((pt,i)=>{
+    const slice=raw.slice(Math.max(0,i-W),Math.min(raw.length,i+W+1));
+    return{d:Math.round(pt.d),speed:Math.round(slice.reduce((s,p)=>s+p.speed,0)/slice.length*10)/10};
+  });
+  const step=Math.max(1,Math.floor(smoothed.length/maxSamples));
+  return smoothed.filter((_,i)=>i%step===0);
 }
 
 // ── Shared seek / zoom state ──────────────────────────────────────────────────
@@ -461,16 +497,21 @@ function renderPage(route,points){
   const typeEl=document.getElementById('headerType');
   typeEl.textContent=ACTIVITY_EMOJI[route.type]+' '+route.type;
   typeEl.style.background=color+'22'; typeEl.style.color=color;
-  document.getElementById('routeTitle').textContent=route.name;
-  const dateStr=m?.startTime?fmtDate(m.startTime):'';
+  document.getElementById('routeTitle').textContent=ACTIVITY_EMOJI[route.type]+' '+route.name;
   const ptStr=m?.pointCount?m.pointCount.toLocaleString()+' GPS points':'';
+  const dateStr=m?.startTime?fmtDate(m.startTime):'';
   document.getElementById('routeSubtitle').textContent=[dateStr,ptStr].filter(Boolean).join(' · ');
 
-  // Cards
+  // Cards — built after speed profile so we have maxSpd
+  const speedProfile = buildSpeedProfile(points);
+  const speeds = speedProfile.map(p=>p.speed);
+  const maxSpd = speeds.length > 0 ? Math.max(...speeds).toFixed(1) : null;
+
   const cards=[
     {val:fmt(m?.distanceKm),unit:'km',lbl:'Distance',accent:true},
     {val:fmtTime(m?.movingTime),unit:'',lbl:'Moving Time'},
     {val:fmtSpeed(m?.distanceKm,m?.movingTime),unit:'',lbl:'Avg Speed'},
+    {val:maxSpd?maxSpd+' km/h':'—',unit:'',lbl:'Max Speed'},
     {val:m?.elevGain!=null?m.elevGain.toLocaleString():'—',unit:'m',lbl:'Ascent'},
     {val:m?.elevLoss!=null?m.elevLoss.toLocaleString():'—',unit:'m',lbl:'Descent'},
   ];
@@ -538,21 +579,35 @@ function renderPage(route,points){
     }
   }
 
+  // Speed chart
+  if(speedProfile.length>2){
+    document.getElementById('speedSection').style.display='block';
+    const avgSpd=Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length*10)/10;
+    const chart=makeChart({
+      canvasId:'speedCanvas',tooltipId:'speedTooltip',resetBtnId:'speedReset',
+      data:speedProfile.map(p=>({d:p.d,y:p.speed})),
+      color,yUnit:'km/h',
+      statsEl:document.getElementById('speedStats'),
+      statsHtml:`<span>avg ${avgSpd} km/h</span><span>max ${maxSpd} km/h</span>`,
+    });
+    if(chart){
+      seekers.push({id:'speedCanvas',seekFn:chart.seekFn});
+      zoomers.push({id:'speedCanvas',zoomFn:chart.zoomFn,resetFn:chart.resetFn});
+    }
+  }
+
   // Details
   const rows=[
-    ['Date',fmtDate(m?.startTime)],
-    ['Activity',ACTIVITY_EMOJI[route.type]+' '+route.type],
-    ['Distance',fmt(m?.distanceKm)+' km'],
-    ['Moving Time',fmtTime(m?.movingTime)],
-    ['Total Time',fmtTime(m?.totalTime)],
-    ['Average Speed',fmtSpeed(m?.distanceKm,m?.movingTime)],
-    ['Ascent',m?.elevGain!=null?m.elevGain.toLocaleString()+' m':'—'],
-    ['Descent',m?.elevLoss!=null?m.elevLoss.toLocaleString()+' m':'—'],
-    ['Max Elevation',m?.maxEle!=null?m.maxEle.toLocaleString()+' m':'—'],
-    ['Min Elevation',m?.minEle!=null?m.minEle.toLocaleString()+' m':'—'],
-    ['Avg Heart Rate',m?.avgHr?m.avgHr+' bpm':'—'],
-    ['GPS Points',m?.pointCount?m.pointCount.toLocaleString():'—'],
-    ['GPX File',`data/gpx/${route.id}.gpx`],
+    ['Distance',       fmt(m?.distanceKm)+' km'],
+    ['Moving Time',    fmtTime(m?.movingTime)],
+    ['Total Time',     fmtTime(m?.totalTime)],
+    ['Average Speed',  fmtSpeed(m?.distanceKm,m?.movingTime)],
+    ['Max Speed',      maxSpd?maxSpd+' km/h':'—'],
+    ['Ascent',         m?.elevGain!=null?m.elevGain.toLocaleString()+' m':'—'],
+    ['Descent',        m?.elevLoss!=null?m.elevLoss.toLocaleString()+' m':'—'],
+    ['Max Elevation',  m?.maxEle!=null?m.maxEle.toLocaleString()+' m':'—'],
+    ['Min Elevation',  m?.minEle!=null?m.minEle.toLocaleString()+' m':'—'],
+    ['Avg Heart Rate', m?.avgHr?m.avgHr+' bpm':'—'],
   ];
   const table=document.getElementById('detailsTable');
   rows.forEach(([lbl,val])=>{
