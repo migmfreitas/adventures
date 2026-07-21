@@ -19,8 +19,9 @@
 const fs   = require('fs');
 const path = require('path');
 
-const GPX_DIR    = path.join(__dirname, '../../data/gpx');
-const INDEX_FILE = path.join(__dirname, '../../data/index.json');
+const GPX_DIR        = path.join(__dirname, '../../data/gpx');
+const INDEX_FILE     = path.join(__dirname, '../../data/index.json');
+const COLLECTIONS_FILE = path.join(__dirname, '../../data/collections.json');
 
 const VALID_TYPES = new Set(['bike', 'hike', 'kayak', 'run', 'other']);
 
@@ -220,7 +221,18 @@ function scanGpxFiles() {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
-  // Load existing to preserve addedAt and any manual name overrides
+  // Load collections.json for ordering and display names
+  let collections = [];
+  if (fs.existsSync(COLLECTIONS_FILE)) {
+    try { collections = JSON.parse(fs.readFileSync(COLLECTIONS_FILE,'utf8')); } catch {}
+  }
+  // Map from folder name (case-insensitive) → { name, description, order }
+  const collectionMap = new Map();
+  collections.forEach((c, i) => {
+    collectionMap.set(c.folder.toLowerCase(), { name: c.name, description: c.description||'', order: i });
+  });
+
+  // Load existing to preserve addedAt
   let existing = [];
   if (fs.existsSync(INDEX_FILE)) {
     try { existing = JSON.parse(fs.readFileSync(INDEX_FILE,'utf8')); } catch {}
@@ -241,25 +253,40 @@ async function main() {
       console.error(`  ✗ ${path.relative(GPX_DIR,file)}: ${e.message}`);
       continue;
     }
+
+    // Override group display name from collections.json if defined
+    const col = group ? collectionMap.get(group.toLowerCase()) : null;
+    const resolvedGroupName = col ? col.name : groupName;
+
     entries.push({
       id,
-      name:      existingMap[id]?.name    || name,
+      name:        existingMap[id]?.name || name,
       type,
-      group:     group     || null,
-      groupName: groupName || null,
+      group:       group || null,
+      groupName:   resolvedGroupName || null,
+      description: col?.description || null,
       gpxPath,
-      addedAt:   existingMap[id]?.addedAt || new Date().toISOString(),
+      addedAt:     existingMap[id]?.addedAt || new Date().toISOString(),
       metrics,
     });
   }
 
-  // Grouped routes keep their numeric prefix order (already sorted above)
-  // Ungrouped routes sort by startTime descending (newest first)
+  // Sort: grouped routes ordered by collections.json, then within group by filename prefix
+  // Ungrouped routes sorted by startTime descending
   const grouped   = entries.filter(e => e.group);
   const ungrouped = entries.filter(e => !e.group).sort((a, b) => {
     const ta = a.metrics.startTime || a.addedAt;
     const tb = b.metrics.startTime || b.addedAt;
     return new Date(tb) - new Date(ta);
+  });
+
+  // Sort grouped by collection order (unlisted collections go after listed ones)
+  grouped.sort((a, b) => {
+    const orderA = collectionMap.get(a.group?.toLowerCase())?.order ?? Infinity;
+    const orderB = collectionMap.get(b.group?.toLowerCase())?.order ?? Infinity;
+    if (orderA !== orderB) return orderA - orderB;
+    // Within same collection, preserve filename prefix order (already sorted by scanGpxFiles)
+    return 0;
   });
 
   const sorted = [...grouped, ...ungrouped];
