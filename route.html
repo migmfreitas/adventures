@@ -86,7 +86,7 @@
 <body>
 
 <header>
-  <a class="back-btn" href="index.html">← Back</a>
+  <a class="back-btn" id="backBtn" href="index.html">← Back</a>
   <span class="header-title" id="headerTitle"></span>
   <span class="header-type" id="headerType"></span>
   <button class="dl-btn" id="dlGpxBtn" style="display:none">↓ GPX</button>
@@ -459,7 +459,14 @@ function makeChart({ canvasId, tooltipId, resetBtnId, data, color, yUnit, statsE
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 (async()=>{
-  const id=new URLSearchParams(location.search).get('id');
+  const params  = new URLSearchParams(location.search);
+  const id      = params.get('id');
+  const group   = params.get('group');
+
+  // Set back button to restore group state
+  const backBtn = document.getElementById('backBtn');
+  backBtn.href  = group ? `index.html?group=${encodeURIComponent(group)}` : 'index.html';
+
   if(!id){ showError('No route ID. <a href="index.html">← Back</a>'); return; }
   const index=await Store.loadIndex();
   const route=index.find(r=>r.id===id);
