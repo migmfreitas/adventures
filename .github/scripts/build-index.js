@@ -54,6 +54,12 @@ function makeId(type, group, filename) {
   return parts.join('/').replace(/[^a-z0-9/._-]/gi, '-').toLowerCase();
 }
 
+function makeGpxPath(type, group, filename) {
+  // Preserve original filename with spaces/capitals for the actual fetch path
+  const parts = ['data/gpx', type, group, filename].filter(Boolean);
+  return parts.join('/');
+}
+
 // ── GPX parser ────────────────────────────────────────────────────────────────
 const { DOMParser } = require('@xmldom/xmldom');
 
@@ -190,17 +196,19 @@ function scanGpxFiles() {
         for (const file of files) {
           results.push({
             type, group, groupName,
-            file: path.join(groupPath, file),
-            id:   makeId(type, group, file),
-            name: filenameToName(file),
+            file:    path.join(groupPath, file),
+            id:      makeId(type, group, file),
+            gpxPath: makeGpxPath(type, group, file),
+            name:    filenameToName(file),
           });
         }
       } else if (entry.name.toLowerCase().endsWith('.gpx')) {
         results.push({
           type, group: null, groupName: null,
-          file: path.join(typePath, entry.name),
-          id:   makeId(type, null, entry.name),
-          name: filenameToName(entry.name),
+          file:    path.join(typePath, entry.name),
+          id:      makeId(type, null, entry.name),
+          gpxPath: makeGpxPath(type, null, entry.name),
+          name:    filenameToName(entry.name),
         });
       }
     }
@@ -238,6 +246,7 @@ async function main() {
       type,
       group:     group     || null,
       groupName: groupName || null,
+      gpxPath,
       addedAt:   existingMap[id]?.addedAt || new Date().toISOString(),
       metrics,
     });
