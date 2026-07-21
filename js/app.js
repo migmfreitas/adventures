@@ -26,6 +26,9 @@ let polylines    = {};
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 (async () => {
   [routes, groups] = await Promise.all([Store.loadIndex(), Store.loadGroups()]);
+  // Restore open group from URL param (set when navigating to a route)
+  const urlGroup = new URLSearchParams(location.search).get('group');
+  if (urlGroup) openGroupId = urlGroup;
   render();
   setTimeout(() => map.invalidateSize(), 200);
 })();
@@ -159,7 +162,10 @@ function makeRouteItem(route) {
     const pl = polylines[route.id];
     if (pl) pl.setStyle({ weight:3, opacity:0.8 });
   });
-  item.addEventListener('click', () => { window.location.href = `route.html?id=${route.id}`; });
+  item.addEventListener('click', () => {
+    const url = `route.html?id=${encodeURIComponent(route.id)}${openGroupId ? '&group='+encodeURIComponent(openGroupId) : ''}`;
+    window.location.href = url;
+  });
   return item;
 }
 
@@ -212,11 +218,14 @@ function renderMap() {
         L.popup({ closeButton:false }).setLatLng(e.latlng).setContent(`
           <div class="popup-name">${esc(route.name)}</div>
           <div class="popup-meta">📍 ${route.metrics?.distanceKm??'?'} km${route.metrics?.elevGain?'<br/>↑ '+route.metrics.elevGain+' m':''}<br/>${ACTIVITY_EMOJI[route.type]||'✦'} ${route.type}</div>
-          <a class="popup-link" href="route.html?id=${route.id}">View details →</a>
+          <a class="popup-link" href="route.html?id=${encodeURIComponent(route.id)}${openGroupId?'&group='+encodeURIComponent(openGroupId):''}">View details →</a>
         `).openOn(map);
       });
       pl.on('mouseout', () => pl.setStyle({ weight:3, opacity:0.8 }));
-      pl.on('click', () => { window.location.href = `route.html?id=${route.id}`; });
+      pl.on('click', () => {
+        const url = `route.html?id=${encodeURIComponent(route.id)}${openGroupId?'&group='+encodeURIComponent(openGroupId):''}`;
+        window.location.href = url;
+      });
     }
     polylines[route.id] = pl;
   });
