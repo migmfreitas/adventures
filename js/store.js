@@ -20,7 +20,7 @@ const Store = {
     }
   },
 
-  /** Derive groups from index entries, preserving collections.json order */
+  /** Derive groups from index entries, preserving index.json order */
   async loadGroups() {
     const routes = await this.loadIndex();
     const seen   = new Map();
@@ -38,6 +38,7 @@ const Store = {
       }
       seen.get(key).routes.push(r.id);
     }
+    // Map preserves insertion order, which matches index.json order
     return [...seen.values()];
   },
 
