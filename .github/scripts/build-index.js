@@ -301,15 +301,25 @@ async function main() {
     return new Date(tb) - new Date(ta);
   });
 
-  // Sort grouped by collection order (unlisted collections go after listed ones)
-  grouped.sort((a, b) => {
-    const orderA = collectionMap.get(a.group?.toLowerCase())?.order ?? Infinity;
-    const orderB = collectionMap.get(b.group?.toLowerCase())?.order ?? Infinity;
-    if (orderA !== orderB) return orderA - orderB;
-    return 0;
+  // Group entries by group key, preserving internal order
+  const groupMap = new Map();
+  for (const e of grouped) {
+    const key = e.group?.toLowerCase() || '';
+    if (!groupMap.has(key)) groupMap.set(key, []);
+    groupMap.get(key).push(e);
+  }
+
+  // Sort group keys by collections.json order
+  const sortedGroupKeys = [...groupMap.keys()].sort((a, b) => {
+    const orderA = collectionMap.get(a)?.order ?? Infinity;
+    const orderB = collectionMap.get(b)?.order ?? Infinity;
+    return orderA - orderB;
   });
 
-  const sorted = [...grouped, ...ungrouped];
+  // Rebuild grouped in correct order
+  const groupedSorted = sortedGroupKeys.flatMap(key => groupMap.get(key));
+
+  const sorted = [...groupedSorted, ...ungrouped];
 
   fs.writeFileSync(INDEX_FILE, JSON.stringify(sorted, null, 2));
   console.log(`\nWrote ${sorted.length} entries to data/index.json`);
