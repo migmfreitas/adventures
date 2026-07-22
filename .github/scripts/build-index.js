@@ -302,11 +302,12 @@ async function main() {
   });
 
   // Sort grouped by collection order (unlisted collections go after listed ones)
+  console.log('Collection map keys:', [...collectionMap.keys()]);
+  console.log('Groups in entries:', [...new Set(grouped.map(e => e.group + ' → key: ' + e.group?.toLowerCase()))]);
   grouped.sort((a, b) => {
     const orderA = collectionMap.get(a.group?.toLowerCase())?.order ?? Infinity;
     const orderB = collectionMap.get(b.group?.toLowerCase())?.order ?? Infinity;
     if (orderA !== orderB) return orderA - orderB;
-    // Within same collection, preserve filename prefix order (already sorted by scanGpxFiles)
     return 0;
   });
 
