@@ -90,6 +90,7 @@
     .empty-state strong { color: var(--text); }
 
     #map { flex: 1; min-height: 0; height: 100%; }
+    #map .leaflet-tile-pane { filter: grayscale(1) contrast(1.15) brightness(0.95); }
 
     .drop-overlay { display: none; position: fixed; inset: 56px 0 0 0; z-index: 900; background: rgba(15,17,23,.85); backdrop-filter: blur(4px); align-items: center; justify-content: center; flex-direction: column; gap: 16px; border: 3px dashed var(--accent); pointer-events: none; }
     .drop-overlay.active { display: flex; }
