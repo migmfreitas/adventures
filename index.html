@@ -90,7 +90,10 @@
     .empty-state strong { color: var(--text); }
 
     #map { flex: 1; min-height: 0; height: 100%; }
-    #map .leaflet-tile-pane { filter: grayscale(1) contrast(1.15) brightness(0.95); }
+
+    .map-color-control { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+    .map-color-icon { font-size: 12px; line-height: 1; opacity: .75; }
+    .map-color-slider { width: 90px; accent-color: var(--accent); cursor: pointer; }
 
     .drop-overlay { display: none; position: fixed; inset: 56px 0 0 0; z-index: 900; background: rgba(15,17,23,.85); backdrop-filter: blur(4px); align-items: center; justify-content: center; flex-direction: column; gap: 16px; border: 3px dashed var(--accent); pointer-events: none; }
     .drop-overlay.active { display: flex; }
@@ -232,6 +235,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/map-color.js?v=1"></script>
 <script src="js/gpx-parser.js?v=4"></script>
 <script src="js/store.js?v=4"></script>
 <script src="js/app.js?v=4"></script>
