@@ -70,6 +70,12 @@ function folderToName(folder) {
   return toTitleCase(folder.replace(/-/g, ' '));
 }
 
+// Normalizes before lowercasing so visually-identical folder/group names
+// that differ in Unicode form (precomposed vs. combining-mark accents —
+// easy to end up with when a name is typed in one tool and pasted from
+// another) still match up as the same collection.
+function collectionKey(str) { return str.normalize('NFC').toLowerCase(); }
+
 function makeId(type, group, filename) {
   const base = path.basename(filename, '.gpx');
   const parts = [type, group, base].filter(Boolean);
@@ -250,7 +256,7 @@ async function main() {
   // Map from folder name (case-insensitive) → { name, description, order }
   const collectionMap = new Map();
   collections.forEach((c, i) => {
-    collectionMap.set(c.folder.toLowerCase(), { name: c.name, description: c.description||'', order: i });
+    collectionMap.set(collectionKey(c.folder), { name: c.name, description: c.description||'', order: i });
   });
 
   // Load existing to preserve addedAt
@@ -276,7 +282,7 @@ async function main() {
     }
 
     // Override group display name from collections.json if defined
-    const col = group ? collectionMap.get(group.toLowerCase()) : null;
+    const col = group ? collectionMap.get(collectionKey(group)) : null;
     const resolvedGroupName = col ? col.name : groupName;
 
     entries.push({
@@ -295,8 +301,10 @@ async function main() {
     });
   }
 
-  // Sort: grouped routes ordered by collections.json, then within group by filename prefix
-  // Ungrouped routes sorted by startTime descending
+  // Sort: grouped routes ordered by collections.json, then within group by their
+  // stored `order` (set by the admin portal's reorder arrows, or by this script
+  // the first time it sees a route — see below). Ungrouped routes sorted by
+  // startTime descending.
   const grouped   = entries.filter(e => e.group);
   const ungrouped = entries.filter(e => !e.group).sort((a, b) => {
     const ta = a.metrics.startTime || a.addedAt;
@@ -307,9 +315,29 @@ async function main() {
   // Group entries by group key, preserving internal order
   const groupMap = new Map();
   for (const e of grouped) {
-    const key = e.group?.toLowerCase() || '';
+    const key = e.group ? collectionKey(e.group) : '';
     if (!groupMap.has(key)) groupMap.set(key, []);
     groupMap.get(key).push(e);
+  }
+
+  // Within each group, keep routes the index already had an `order` for in
+  // that order; a route seen for the first time (added via manual GPX
+  // upload rather than the admin portal) has no prior order yet, so it's
+  // slotted in by its filename prefix and appended after the known ones.
+  // Either way, the group ends up with dense 0..n-1 order values that the
+  // admin portal's reorder arrows can then swap directly.
+  for (const [key, list] of groupMap) {
+    const known = list
+      .filter(e => typeof existingMap[e.id]?.order === 'number')
+      .sort((a, b) => existingMap[a.id].order - existingMap[b.id].order);
+    const unknown = list
+      .filter(e => typeof existingMap[e.id]?.order !== 'number')
+      .sort((a, b) =>
+        filenameSortKey(path.basename(a.gpxPath)) - filenameSortKey(path.basename(b.gpxPath)) ||
+        a.name.localeCompare(b.name));
+    const merged = [...known, ...unknown];
+    merged.forEach((e, i) => { e.order = i; });
+    groupMap.set(key, merged);
   }
 
   // Sort group keys by collections.json order
