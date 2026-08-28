@@ -1,8 +1,9 @@
 /**
  * Admin portal — commits GPX routes (+ description, + photos) straight to
  * GitHub using a personal access token supplied by the operator, stored only
- * in this browser's localStorage. Supports adding, editing, and deleting
- * routes.
+ * in this browser's localStorage. Supports adding, editing, deleting, and
+ * reordering routes and collections (order lives in each index.json entry's
+ * `order` field and in collections.json's array order — see resortIndex).
  *
  * Mirrors the folder/id/sort conventions in .github/scripts/build-index.js
  * so the entry this page writes is indistinguishable from one the Action
@@ -31,6 +32,7 @@ const state = {
   removedPhotos: [],    // existing photo paths marked for removal while editing
   routesIndex: null,   // cached data/index.json, loaded lazily for the browser
   treeCache: null,      // { commitSha, map: Map<path, blobSha> }
+  reordering: false,    // true while a reorder commit is in flight (disables the arrows)
 };
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -83,14 +85,22 @@ function filenameSortKey(gpxPath) {
   const m = base.match(/^(\d+)/);
   return m ? parseInt(m[1], 10) : Infinity;
 }
-function orderFromGpxPath(gpxPath) {
-  const base = gpxPath.split('/').pop().replace(/\.gpx$/i, '');
-  const m = base.match(/^(\d+)-/);
-  return m ? String(parseInt(m[1], 10)) : '';
-}
+/**
+ * Sorts entries into their final index.json order and renumbers each
+ * group's `order` field densely (0..n-1). Ties (equal/missing `order`,
+ * e.g. an entry newly dropped into a group) fall back to filename prefix
+ * then name, so brand-new routes land somewhere sane before being
+ * explicitly repositioned via the reorder arrows or the position field.
+ */
+// Normalizes before lowercasing so visually-identical folder/group names
+// that differ in Unicode form (e.g. precomposed vs. combining-mark accents
+// — easy to end up with when a name is typed in one tool and pasted from
+// another) still match up as the same collection.
+function collectionKey(str) { return str.normalize('NFC').toLowerCase(); }
+
 function resortIndex(entries, collections) {
   const collectionMap = new Map();
-  collections.forEach((c, i) => collectionMap.set(c.folder.toLowerCase(), { order: i }));
+  collections.forEach((c, i) => collectionMap.set(collectionKey(c.folder), { order: i }));
 
   const grouped   = entries.filter(e => e.group);
   const ungrouped = entries.filter(e => !e.group).sort((a, b) => {
@@ -101,12 +111,16 @@ function resortIndex(entries, collections) {
 
   const groupMap = new Map();
   for (const e of grouped) {
-    const key = e.group.toLowerCase();
+    const key = collectionKey(e.group);
     if (!groupMap.has(key)) groupMap.set(key, []);
     groupMap.get(key).push(e);
   }
   for (const list of groupMap.values()) {
-    list.sort((a, b) => filenameSortKey(a.gpxPath) - filenameSortKey(b.gpxPath) || a.name.localeCompare(b.name));
+    list.sort((a, b) =>
+      (a.order ?? Infinity) - (b.order ?? Infinity) ||
+      filenameSortKey(a.gpxPath) - filenameSortKey(b.gpxPath) ||
+      a.name.localeCompare(b.name));
+    list.forEach((e, i) => { e.order = i; });
   }
 
   const sortedGroupKeys = [...groupMap.keys()].sort((a, b) =>
@@ -233,6 +247,7 @@ async function connect(token) {
   $('authConnected').style.display = '';
   $('uploadCard').style.display = '';
   $('routesCard').style.display = '';
+  $('collectionsCard').style.display = '';
   await loadCollections();
 }
 function disconnect() {
@@ -243,6 +258,7 @@ function disconnect() {
   $('authConnected').style.display = 'none';
   $('uploadCard').style.display = 'none';
   $('routesCard').style.display = 'none';
+  $('collectionsCard').style.display = 'none';
   $('tokenInput').value = '';
   state.routesIndex = null;
   state.treeCache = null;
@@ -272,6 +288,7 @@ async function loadCollections() {
     state.collections = [];
   }
   populateGroupSelect();
+  renderCollectionsList();
 }
 function populateGroupSelect(selected) {
   const sel = $('groupSelect');
@@ -409,12 +426,16 @@ function readFormFields() {
     groupName = existing ? existing.name : groupSel;
   }
 
-  const order = orderRaw ? String(parseInt(orderRaw, 10)).padStart(3, '0') : null;
+  // 1-based position typed in the form's position field → a sort key that lands the
+  // entry just before whatever currently holds that (0-based) slot; blank
+  // means "append at the end". resortIndex renumbers everything densely
+  // afterward, so this only has to land in roughly the right place.
+  const orderSortKey = orderRaw ? Math.max(0, parseInt(orderRaw, 10) - 1) - 0.5 : Infinity;
+
   const safeName = name.replace(/[\\/:*?"<>|]/g, '').trim();
-  const filename = (order ? `${order}-${safeName}` : safeName) + '.gpx';
   const folderSeg = groupFolder || 'ungrouped';
 
-  return { type, name, description, groupFolder, groupName, newCollectionEntry, filename, folderSeg };
+  return { type, name, description, groupFolder, groupName, newCollectionEntry, orderSortKey, safeName, folderSeg };
 }
 
 async function createRoute() {
@@ -422,7 +443,8 @@ async function createRoute() {
   if (!state.token) throw new Error('Connect with a GitHub token first.');
   if (!state.gpxFile || !state.parsed) throw new Error('Choose a GPX file first.');
 
-  const { type, name, description, groupFolder, groupName, newCollectionEntry, filename, folderSeg } = readFormFields();
+  const { type, name, description, groupFolder, groupName, newCollectionEntry, orderSortKey, safeName, folderSeg } = readFormFields();
+  const filename = safeName + '.gpx';
   const gpxPath = `data/gpx/${type}/${folderSeg}/${filename}`;
   const id = makeId(type, groupFolder, filename);
 
@@ -439,7 +461,7 @@ async function createRoute() {
   logLine(`✓ ${indexEntries.length} existing route(s) loaded`);
 
   if (indexEntries.some(en => en.id === id)) {
-    throw new Error(`A route with id "${id}" already exists — change the name or stage number.`);
+    throw new Error(`A route with id "${id}" already exists — change the name.`);
   }
 
   const metrics = state.parsed.metrics;
@@ -460,6 +482,7 @@ async function createRoute() {
     photos: photoPaths,
     addedAt: new Date().toISOString(),
     metrics,
+    ...(groupFolder ? { order: orderSortKey } : {}),
   };
   const sortedEntries = resortIndex([...indexEntries, newEntry], updatedCollections);
 
@@ -482,9 +505,7 @@ async function updateRoute() {
   if (!orig) throw new Error('No route selected to edit.');
   if (!state.token) throw new Error('Connect with a GitHub token first.');
 
-  const { type, name, description, groupFolder, groupName, newCollectionEntry, filename, folderSeg } = readFormFields();
-  const newGpxPath = `data/gpx/${type}/${folderSeg}/${filename}`;
-  const newId = makeId(type, groupFolder, filename);
+  const { type, name, description, groupFolder, groupName, newCollectionEntry, orderSortKey, safeName, folderSeg } = readFormFields();
 
   logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
   const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
@@ -498,8 +519,17 @@ async function updateRoute() {
   const current = indexEntries.find(en => en.id === orig.id);
   if (!current) throw new Error('This route no longer exists in the index — someone may have deleted it. Reload the route list.');
 
+  // Order lives in index.json now, decoupled from the filename — so a pure
+  // reorder (or any other metadata-only edit) must not rename the GPX file
+  // or change the route's id. Only regenerate the filename when something
+  // that actually determines the path changed.
+  const identityChanged = type !== current.type || (groupFolder || null) !== (current.group || null) || name !== current.name;
+  const filename = identityChanged ? safeName + '.gpx' : current.gpxPath.split('/').pop();
+  const newGpxPath = `data/gpx/${type}/${folderSeg}/${filename}`;
+  const newId = makeId(type, groupFolder, filename);
+
   if (newId !== orig.id && indexEntries.some(en => en.id === newId)) {
-    throw new Error(`A route with id "${newId}" already exists — change the name or stage number.`);
+    throw new Error(`A route with id "${newId}" already exists — change the name.`);
   }
 
   const adds = [];
@@ -555,6 +585,7 @@ async function updateRoute() {
     photos: finalPhotoPaths,
     addedAt: current.addedAt,
     metrics,
+    ...(groupFolder ? { order: orderSortKey } : {}),
   };
   const mergedEntries = [...indexEntries.filter(en => en.id !== orig.id), updatedEntry];
   const sortedEntries = resortIndex(mergedEntries, updatedCollections);
@@ -633,7 +664,7 @@ function enterEditMode(entry) {
 
   $('typeSelect').value = entry.type;
   $('nameInput').value = entry.name;
-  $('orderInput').value = orderFromGpxPath(entry.gpxPath);
+  $('orderInput').value = typeof entry.order === 'number' ? entry.order + 1 : '';
   $('descInput').value = entry.description || '';
   populateGroupSelect(entry.group || '');
   $('newGroupFields').style.display = 'none';
@@ -672,6 +703,85 @@ function resetForm() {
   populateGroupSelect();
 }
 
+// ── Collections browser (reorder) ───────────────────────────────────────────
+function renderCollectionsList() {
+  const list = $('collectionsList');
+  if (!state.collections.length) {
+    list.innerHTML = '<div class="routes-empty">No collections yet — add one from the form above.</div>';
+    return;
+  }
+  list.style.opacity = state.reordering ? '.5' : '';
+  list.style.pointerEvents = state.reordering ? 'none' : '';
+  list.innerHTML = '';
+  state.collections.forEach((c, i) => {
+    const count = state.routesIndex ? state.routesIndex.filter(r => r.group === c.folder).length : null;
+    const canUp = i > 0, canDown = i < state.collections.length - 1;
+    const row = document.createElement('div');
+    row.className = 'collection-row';
+    row.innerHTML = `
+      <div class="reorder-col">
+        <button type="button" class="btn reorder-btn" data-act="up" ${canUp ? '' : 'disabled'} title="Move up">↑</button>
+        <button type="button" class="btn reorder-btn" data-act="down" ${canDown ? '' : 'disabled'} title="Move down">↓</button>
+      </div>
+      <div class="collection-row-info">
+        <div class="collection-row-name">${esc(c.name)}</div>
+        <div class="collection-row-meta">${count !== null ? count + ' route' + (count === 1 ? '' : 's') : esc(c.folder)}</div>
+      </div>
+    `;
+    if (canUp) row.querySelector('[data-act="up"]').addEventListener('click', () => moveCollectionOrder(c.folder, -1));
+    if (canDown) row.querySelector('[data-act="down"]').addEventListener('click', () => moveCollectionOrder(c.folder, 1));
+    list.appendChild(row);
+  });
+}
+
+async function moveCollectionOrder(folder, direction) {
+  if (state.reordering) return;
+  state.reordering = true;
+  renderCollectionsList();
+  renderRoutesList();
+  clearLog();
+  try {
+    logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
+    const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
+    const latestCommitSha = ref.object.sha;
+
+    const [indexEntries, collections] = await Promise.all([
+      fetchRawJson('data/index.json', latestCommitSha, []),
+      fetchRawJson('data/collections.json', latestCommitSha, []),
+    ]);
+    const idx = collections.findIndex(c => c.folder === folder);
+    const swapIdx = idx + direction;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= collections.length) {
+      logLine('Nothing to do — reload and try again.');
+      return;
+    }
+    const reordered = [...collections];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+
+    const sortedEntries = resortIndex(indexEntries, reordered);
+    logLine(`Uploading reordered collections…`);
+    await writeCommit({
+      message: `Reorder collection: ${reordered[idx].name || folder}`,
+      latestCommitSha,
+      adds: [
+        { path: 'data/index.json', content: JSON.stringify(sortedEntries, null, 2), encoding: 'utf-8' },
+        { path: 'data/collections.json', content: JSON.stringify(reordered, null, 2), encoding: 'utf-8' },
+      ],
+      deletes: [],
+    });
+
+    state.collections = reordered;
+    state.routesIndex = sortedEntries;
+    logLine('<b>Reordered.</b>', false, true);
+  } catch (err) {
+    logLine('✗ ' + esc(err.message), true);
+  } finally {
+    state.reordering = false;
+    renderCollectionsList();
+    renderRoutesList();
+  }
+}
+
 // ── Existing routes browser ───────────────────────────────────────────────────
 const ACTIVITY_EMOJI = { bike:'🚴', hike:'🥾', kayak:'🛶', run:'🏃', other:'✦' };
 
@@ -681,6 +791,7 @@ $('loadRoutesBtn').addEventListener('click', async () => {
   try {
     state.routesIndex = await fetchRawJson('data/index.json', state.defaultBranch, []);
     renderRoutesList();
+    renderCollectionsList();
   } catch (e) {
     $('routesList').innerHTML = `<div class="routes-empty">Could not load routes: ${esc(e.message)}</div>`;
   } finally {
@@ -689,41 +800,144 @@ $('loadRoutesBtn').addEventListener('click', async () => {
 });
 $('routesSearch').addEventListener('input', renderRoutesList);
 
+function makeRouteRow(r, reorder) {
+  const row = document.createElement('div');
+  row.className = 'route-row';
+  const km = r.metrics?.distanceKm ?? '?';
+  row.innerHTML = `
+    ${reorder ? `<div class="reorder-col">
+      <button type="button" class="btn reorder-btn" data-act="up" ${reorder.canUp ? '' : 'disabled'} title="Move up">↑</button>
+      <button type="button" class="btn reorder-btn" data-act="down" ${reorder.canDown ? '' : 'disabled'} title="Move down">↓</button>
+    </div>` : ''}
+    <span class="route-row-emoji">${ACTIVITY_EMOJI[r.type] || '✦'}</span>
+    <div class="route-row-info">
+      <div class="route-row-name">${esc(r.name)}</div>
+      <div class="route-row-meta">${km} km${r.groupName ? ' · ' + esc(r.groupName) : ''}</div>
+    </div>
+    <div class="route-row-actions">
+      <button type="button" class="btn btn-small" data-act="edit">Edit</button>
+      <button type="button" class="btn btn-small btn-danger" data-act="delete">Delete</button>
+    </div>
+  `;
+  row.querySelector('[data-act="edit"]').addEventListener('click', () => enterEditMode(r));
+  row.querySelector('[data-act="delete"]').addEventListener('click', () => deleteRouteFlow(r));
+  if (reorder) {
+    if (reorder.canUp) row.querySelector('[data-act="up"]').addEventListener('click', () => moveRouteOrder(r, -1));
+    if (reorder.canDown) row.querySelector('[data-act="down"]').addEventListener('click', () => moveRouteOrder(r, 1));
+  }
+  return row;
+}
+
+function makeGroupHeader(text) {
+  const header = document.createElement('div');
+  header.className = 'routes-group-header';
+  header.textContent = text;
+  return header;
+}
+
 function renderRoutesList() {
   const list = $('routesList');
   if (!state.routesIndex) {
     list.innerHTML = '<div class="routes-empty">Click Load to fetch the current route list.</div>';
     return;
   }
-  const q = $('routesSearch').value.trim().toLowerCase();
-  const rows = state.routesIndex
-    .filter(r => !q || r.name.toLowerCase().includes(q) || (r.groupName || '').toLowerCase().includes(q))
-    .sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
+  list.style.opacity = state.reordering ? '.5' : '';
+  list.style.pointerEvents = state.reordering ? 'none' : '';
 
-  if (rows.length === 0) {
+  const q = $('routesSearch').value.trim().toLowerCase();
+  const filtered = state.routesIndex
+    .filter(r => !q || r.name.toLowerCase().includes(q) || (r.groupName || '').toLowerCase().includes(q));
+
+  if (filtered.length === 0) {
     list.innerHTML = '<div class="routes-empty">No routes match.</div>';
     return;
   }
 
   list.innerHTML = '';
-  for (const r of rows) {
-    const row = document.createElement('div');
-    row.className = 'route-row';
-    const km = r.metrics?.distanceKm ?? '?';
-    row.innerHTML = `
-      <span class="route-row-emoji">${ACTIVITY_EMOJI[r.type] || '✦'}</span>
-      <div class="route-row-info">
-        <div class="route-row-name">${esc(r.name)}</div>
-        <div class="route-row-meta">${km} km${r.groupName ? ' · ' + esc(r.groupName) : ''}</div>
-      </div>
-      <div class="route-row-actions">
-        <button type="button" class="btn btn-small" data-act="edit">Edit</button>
-        <button type="button" class="btn btn-small btn-danger" data-act="delete">Delete</button>
-      </div>
-    `;
-    row.querySelector('[data-act="edit"]').addEventListener('click', () => enterEditMode(r));
-    row.querySelector('[data-act="delete"]').addEventListener('click', () => deleteRouteFlow(r));
-    list.appendChild(row);
+
+  if (q) {
+    // Searching shows a flat, newest-first list — reordering a filtered
+    // subset wouldn't reflect each route's real neighbors, so arrows are
+    // hidden until the search is cleared.
+    filtered
+      .sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt))
+      .forEach(r => list.appendChild(makeRouteRow(r, null)));
+    return;
+  }
+
+  const byGroup = new Map();
+  for (const r of filtered) {
+    if (!r.group) continue;
+    if (!byGroup.has(r.group)) byGroup.set(r.group, []);
+    byGroup.get(r.group).push(r);
+  }
+  for (const groupRows of byGroup.values()) {
+    groupRows.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+  }
+
+  for (const groupRows of byGroup.values()) {
+    const section = document.createElement('div');
+    section.className = 'routes-group';
+    section.appendChild(makeGroupHeader(groupRows[0].groupName || groupRows[0].group));
+    groupRows.forEach((r, i) => section.appendChild(makeRouteRow(r, { canUp: i > 0, canDown: i < groupRows.length - 1 })));
+    list.appendChild(section);
+  }
+
+  const ungrouped = filtered.filter(r => !r.group).sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
+  if (ungrouped.length) {
+    const section = document.createElement('div');
+    section.className = 'routes-group';
+    section.appendChild(makeGroupHeader('Ungrouped'));
+    ungrouped.forEach(r => section.appendChild(makeRouteRow(r, null)));
+    list.appendChild(section);
+  }
+}
+
+async function moveRouteOrder(entry, direction) {
+  if (state.reordering) return;
+  state.reordering = true;
+  renderRoutesList();
+  clearLog();
+  try {
+    logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
+    const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
+    const latestCommitSha = ref.object.sha;
+
+    const [indexEntries, collections] = await Promise.all([
+      fetchRawJson('data/index.json', latestCommitSha, []),
+      fetchRawJson('data/collections.json', latestCommitSha, []),
+    ]);
+    const current = indexEntries.find(en => en.id === entry.id);
+    if (!current || !current.group) throw new Error('This route no longer exists or is no longer grouped — reload the list.');
+
+    const siblings = indexEntries
+      .filter(en => en.group === current.group)
+      .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+    const idx = siblings.findIndex(en => en.id === current.id);
+    const swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= siblings.length) {
+      logLine('Nothing to do — reload and try again.');
+      return;
+    }
+    const other = siblings[swapIdx];
+    const tmp = current.order; current.order = other.order; other.order = tmp;
+
+    const sorted = resortIndex(indexEntries, collections);
+    logLine('Uploading reordered index…');
+    await writeCommit({
+      message: `Reorder: ${current.name}`,
+      latestCommitSha,
+      adds: [{ path: 'data/index.json', content: JSON.stringify(sorted, null, 2), encoding: 'utf-8' }],
+      deletes: [],
+    });
+
+    state.routesIndex = sorted;
+    logLine(`<b>Reordered "${esc(current.name)}".</b>`, false, true);
+  } catch (err) {
+    logLine('✗ ' + esc(err.message), true);
+  } finally {
+    state.reordering = false;
+    renderRoutesList();
   }
 }
 

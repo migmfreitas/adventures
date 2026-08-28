@@ -25,11 +25,17 @@ anywhere but `api.github.com`):
 
 The **Existing routes** panel further down the portal lists everything on
 the map (click **Load** — `data/index.json` isn't fetched until you ask for
-it). From there you can **edit** a route — rename it, move it between
-collections, replace its track, add or remove photos, change the
-description — or **delete** it outright. Both are single commits too;
+it), grouped by collection. From there you can **edit** a route — rename it,
+move it between collections, replace its track, add or remove photos, change
+the description — or **delete** it outright. Both are single commits too;
 renaming or moving a route relocates its GPX/photo files in the same
 commit rather than re-uploading them.
+
+Each grouped route has **↑/↓** arrows to reorder it within its collection,
+and the **Collections** panel above it has the same arrows to reorder the
+collections themselves (which collection appears first on the map). Both
+just rewrite `data/index.json`'s `order` field (and `data/collections.json`'s
+array order for collections) — no GPX files are touched or renamed.
 
 ### Option B — manual upload
 
@@ -45,9 +51,15 @@ data/gpx/<type>/<Collection Name>/<NNN-name>.gpx → part of a multi-day collect
 - Valid `<type>` values: `bike`, `hike`, `kayak`, `run`. Anything else → `other`.
 - The filename becomes the route name (title-cased, leading numbers like
   `001-` stripped): `001-Stage 1 - Porto to Vagueira.gpx` → "Stage 1 - Porto To Vagueira".
-- A leading number (`001-`, `002-`, …) controls ordering within a collection.
+- A leading number (`001-`, `002-`, …) is only a starting point for ordering
+  within a collection, used the first time a route is indexed. After that,
+  order lives in each route's `order` field in `data/index.json` (reorder it
+  with the admin portal's ↑/↓ arrows, or by hand) and survives independently
+  of the filename — renaming the file later won't reorder the route.
 - To add a new collection or set its description, add an entry to
-  `data/collections.json` (`folder` must match the folder name exactly).
+  `data/collections.json` (`folder` must match the folder name exactly). The
+  array order of `data/collections.json` controls which collection appears
+  first on the map — also reorderable from the admin portal.
 
 Upload via **github.com → this repo → `data/gpx/…` → Add file → Upload
 files → Commit changes**. The Action then parses every GPX file and rebuilds

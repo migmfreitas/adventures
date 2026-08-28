@@ -24546,7 +24546,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 0
   },
   {
     "id": "bike/eurovelo-1/002-stage-2---vagueira-to-soure",
@@ -44056,7 +44057,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 1
   },
   {
     "id": "bike/eurovelo-1/003-stage-3---soure-to-nazare-",
@@ -62404,7 +62406,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 2
   },
   {
     "id": "bike/eurovelo-1/004-stage-4---nazare--to-consolac-a-o",
@@ -86882,7 +86885,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 3
   },
   {
     "id": "bike/eurovelo-1/005-stage-5---consolac-a-o-to-ericeira",
@@ -110256,7 +110260,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 4
   },
   {
     "id": "bike/eurovelo-1/006-stage-6---ericeira-to-lisboa",
@@ -135733,7 +135738,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 5
   },
   {
     "id": "bike/eurovelo-1/007-stage-7---lisboa-to-setu-bal",
@@ -158425,7 +158431,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 6
   },
   {
     "id": "bike/eurovelo-1/008-stage-8---setu-bal-to-sines",
@@ -174627,7 +174634,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 7
   },
   {
     "id": "bike/eurovelo-1/009-stage-9---sines-to-odeceixe",
@@ -195455,7 +195463,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 8
   },
   {
     "id": "bike/eurovelo-1/010-stage-10---odeceixe-to-sagres",
@@ -217950,7 +217959,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 9
   },
   {
     "id": "hike/viana-to-porto/001-stage-1---viana-do-castelo-to-esposende",
@@ -235913,7 +235923,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 0
   },
   {
     "id": "hike/viana-to-porto/002-stage-2---esposende-to-vila-do-conde",
@@ -251960,7 +251971,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 1
   },
   {
     "id": "hike/viana-to-porto/003-stage-3---vila-do-conde---matosinhos",
@@ -267670,7 +267682,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 2
   },
   {
     "id": "hike/santiago-to-fisterra/001-stage-1---santiago-de-compostela-to-negreira",
@@ -284840,7 +284853,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 0
   },
   {
     "id": "hike/santiago-to-fisterra/002-stage-2---negreira-to-santa-marin-a",
@@ -300503,7 +300517,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 1
   },
   {
     "id": "hike/santiago-to-fisterra/003-stage-3---santa-marin-a-to-dumbria",
@@ -326402,7 +326417,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 2
   },
   {
     "id": "hike/santiago-to-fisterra/004-stage-4---dumbria-to-muxi-a",
@@ -343972,7 +343988,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 3
   },
   {
     "id": "hike/santiago-to-fisterra/005-stage-5---muxi-a-to-fisterra",
@@ -373269,7 +373286,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 4
   },
   {
     "id": "bike/valenc-a-to-porto/001-stage-1---valenc-a-to-vila-praia-de-a-ncora",
@@ -391471,7 +391489,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 0
   },
   {
     "id": "bike/valenc-a-to-porto/002-stage-2---vila-praia-de-a-ncora-to-fa-o",
@@ -408682,7 +408701,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 1
   },
   {
     "id": "bike/valenc-a-to-porto/003-stage-3---fa-o-to-porto",
@@ -428757,7 +428777,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 2
   },
   {
     "id": "hike/sa-o-miguel/001-stage-1---povoac-a-o-to-furnas",
@@ -448019,7 +448040,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 0
   },
   {
     "id": "hike/sa-o-miguel/002-stage-2---furnas-to-vila-franca",
@@ -464796,7 +464818,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 1
   },
   {
     "id": "hike/sa-o-miguel/003-stage-3---vila-franca-to-lagoa-do-fogo",
@@ -481788,7 +481811,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 2
   },
   {
     "id": "hike/sa-o-miguel/004-stage-4---ribeira-grande-to-capelas",
@@ -496739,7 +496763,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 3
   },
   {
     "id": "hike/sa-o-miguel/005-stage-5---capelas-to-pilar-da-bretanha",
@@ -516779,7 +516804,8 @@
           "hr": null
         }
       ]
-    }
+    },
+    "order": 4
   },
   {
     "id": "bike/boys-ride",
