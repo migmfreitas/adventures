@@ -28,6 +28,12 @@
     .route-hero { margin-bottom: 28px; }
     .route-title { font-size: 28px; font-weight: 600; margin-bottom: 6px; }
     .route-subtitle { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); }
+    .route-description { font-size: 14px; line-height: 1.7; color: var(--text); margin-top: 14px; max-width: 70ch; }
+
+    .photo-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 28px; }
+    .photo-gallery a { display: block; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); aspect-ratio: 1; }
+    .photo-gallery img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s; }
+    .photo-gallery a:hover img { transform: scale(1.05); }
 
     .metrics-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 28px; }
     .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
@@ -103,7 +109,10 @@
     <div class="route-hero">
       <div class="route-title" id="routeTitle"></div>
       <div class="route-subtitle" id="routeSubtitle"></div>
+      <div class="route-description" id="routeDescription" style="display:none"></div>
     </div>
+
+    <div class="photo-gallery" id="photoGallery" style="display:none"></div>
 
     <div class="metrics-grid" id="metricsGrid"></div>
 
@@ -513,6 +522,19 @@ function renderPage(route,points){
   const ptStr=m?.pointCount?m.pointCount.toLocaleString()+' GPS points':'';
   const dateStr=m?.startTime?fmtDate(m.startTime):'';
   document.getElementById('routeSubtitle').textContent=[dateStr,ptStr].filter(Boolean).join(' · ');
+
+  if(route.description){
+    const descEl=document.getElementById('routeDescription');
+    descEl.textContent=route.description;
+    descEl.style.display='';
+  }
+  if(route.photos&&route.photos.length){
+    const gallery=document.getElementById('photoGallery');
+    gallery.innerHTML=route.photos.map(p=>
+      `<a href="${esc(p)}" target="_blank" rel="noopener"><img src="${esc(p)}" loading="lazy" alt=""></a>`
+    ).join('');
+    gallery.style.display='';
+  }
 
   // Cards — built after speed profile so we have maxSpd
   const speedProfile = buildSpeedProfile(points);
