@@ -1,13 +1,17 @@
 /**
  * Admin portal — commits GPX routes (+ description, + photos) straight to
  * GitHub using a personal access token supplied by the operator, stored only
- * in this browser's localStorage.
+ * in this browser's localStorage. Supports adding, editing, and deleting
+ * routes.
  *
  * Mirrors the folder/id/sort conventions in .github/scripts/build-index.js
  * so the entry this page writes is indistinguishable from one the Action
- * would have produced. The commit message is prefixed "Add route: " on
- * purpose — the Action skips rebuilding data/index.json when it sees that
- * prefix, since this page already wrote the up-to-date version.
+ * would have produced. Commit messages are prefixed "Add route:" / "Edit
+ * route:" / "Delete route:" — the Action's update-index.yml only reacts to
+ * pushes that touch data/gpx/**.gpx, and always skips rebuilding when the
+ * commit message starts with "Add route:" since this page already wrote the
+ * up-to-date index; edits/deletes still trigger the Action (their gpx paths
+ * change), but the rebuild is a no-op because the index already matches.
  */
 
 const OWNER = 'migmfreitas';
@@ -21,7 +25,12 @@ const state = {
   gpxFile: null,
   gpxText: null,
   parsed: null,
-  photos: [], // { file, url }
+  photos: [],          // new photos to add: { file, url }
+  editingEntry: null,  // the index.json entry currently being edited, or null
+  keptPhotos: [],       // existing photo paths kept while editing
+  removedPhotos: [],    // existing photo paths marked for removal while editing
+  routesIndex: null,   // cached data/index.json, loaded lazily for the browser
+  treeCache: null,      // { commitSha, map: Map<path, blobSha> }
 };
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -30,11 +39,6 @@ function esc(str) {
 }
 function $(id) { return document.getElementById(id); }
 
-function b64ToUtf8(b64) {
-  const binary = atob(b64.replace(/\n/g, ''));
-  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-  return new TextDecoder('utf-8').decode(bytes);
-}
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -78,6 +82,11 @@ function filenameSortKey(gpxPath) {
   const base = gpxPath.split('/').pop().replace(/\.gpx$/i, '');
   const m = base.match(/^(\d+)/);
   return m ? parseInt(m[1], 10) : Infinity;
+}
+function orderFromGpxPath(gpxPath) {
+  const base = gpxPath.split('/').pop().replace(/\.gpx$/i, '');
+  const m = base.match(/^(\d+)-/);
+  return m ? String(parseInt(m[1], 10)) : '';
 }
 function resortIndex(entries, collections) {
   const collectionMap = new Map();
@@ -126,14 +135,80 @@ async function gh(path, { method = 'GET', body } = {}) {
   }
   return res.json();
 }
-async function fetchRawJson(path, commitSha, fallback) {
-  const url = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${commitSha}/${path}`;
+async function fetchRawJson(path, ref, fallback) {
+  const url = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${ref}/${path}`;
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) {
     if (res.status === 404) return fallback;
     throw new Error(`Failed to fetch ${path} (${res.status})`);
   }
   return res.json();
+}
+/** path → blob sha, for the full tree at a commit. Used to move/copy files
+ *  without re-downloading and re-uploading their bytes. */
+async function getTreeMap(commitSha) {
+  if (state.treeCache && state.treeCache.commitSha === commitSha) return state.treeCache.map;
+  const commit = await gh(`/repos/${OWNER}/${REPO}/git/commits/${commitSha}`);
+  const tree = await gh(`/repos/${OWNER}/${REPO}/git/trees/${commit.tree.sha}?recursive=1`);
+  if (tree.truncated) logLine('⚠ Repo tree listing was truncated by the GitHub API — a moved file may be missed.', true);
+  const map = new Map(tree.tree.filter(t => t.type === 'blob').map(t => [t.path, t.sha]));
+  state.treeCache = { commitSha, map };
+  return map;
+}
+
+/**
+ * Builds one commit from a set of additions/moves and deletions, and pushes
+ * it to the branch. `adds` entries are either { path, content, encoding }
+ * (new blob) or { path, sha } (reuse an existing blob at a new path — used
+ * for moving/renaming without re-uploading bytes). `deletes` is a plain
+ * array of paths to remove.
+ */
+async function writeCommit({ message, latestCommitSha, adds, deletes }) {
+  const baseCommit = await gh(`/repos/${OWNER}/${REPO}/git/commits/${latestCommitSha}`);
+  const baseTreeSha = baseCommit.tree.sha;
+
+  const treeEntries = deletes.map(path => ({ path, mode: '100644', type: 'blob', sha: null }));
+  for (const f of adds) {
+    let sha = f.sha;
+    if (!sha) {
+      const blob = await gh(`/repos/${OWNER}/${REPO}/git/blobs`, { method: 'POST', body: { content: f.content, encoding: f.encoding } });
+      sha = blob.sha;
+    }
+    treeEntries.push({ path: f.path, mode: '100644', type: 'blob', sha });
+  }
+  logLine(`✓ ${treeEntries.length} file change(s) prepared`);
+
+  const tree = await gh(`/repos/${OWNER}/${REPO}/git/trees`, { method: 'POST', body: { base_tree: baseTreeSha, tree: treeEntries } });
+  const commit = await gh(`/repos/${OWNER}/${REPO}/git/commits`, {
+    method: 'POST',
+    body: { message, tree: tree.sha, parents: [latestCommitSha] },
+  });
+  logLine('✓ Commit created: ' + commit.sha.slice(0, 7));
+
+  try {
+    await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`, { method: 'PATCH', body: { sha: commit.sha, force: false } });
+  } catch (e) {
+    throw new Error('Someone else pushed to the repo while this was running — the commit was created but not pushed. Reload and retry.');
+  }
+  logLine('✓ Pushed to ' + esc(state.defaultBranch));
+  return commit.sha;
+}
+
+async function encodeNewPhotos(photos, id) {
+  const adds = [];
+  const paths = [];
+  if (!photos.length) return { adds, paths };
+  logLine(`Encoding ${photos.length} photo(s)…`);
+  const ts = Date.now();
+  for (let i = 0; i < photos.length; i++) {
+    const b64 = await fileToBase64(photos[i].file);
+    const safeName = photos[i].file.name.replace(/[\\/:*?"<>|]/g, '').trim();
+    const path = `data/images/${id}/${ts}-${i + 1}-${safeName}`;
+    adds.push({ path, content: b64, encoding: 'base64' });
+    paths.push(path);
+  }
+  logLine('✓ Photos encoded');
+  return { adds, paths };
 }
 
 // ── Log panel ─────────────────────────────────────────────────────────────────
@@ -157,6 +232,7 @@ async function connect(token) {
   $('authForm').style.display = 'none';
   $('authConnected').style.display = '';
   $('uploadCard').style.display = '';
+  $('routesCard').style.display = '';
   await loadCollections();
 }
 function disconnect() {
@@ -166,7 +242,10 @@ function disconnect() {
   $('authForm').style.display = '';
   $('authConnected').style.display = 'none';
   $('uploadCard').style.display = 'none';
+  $('routesCard').style.display = 'none';
   $('tokenInput').value = '';
+  state.routesIndex = null;
+  state.treeCache = null;
 }
 
 $('connectBtn').addEventListener('click', async () => {
@@ -192,10 +271,18 @@ async function loadCollections() {
   } catch (e) {
     state.collections = [];
   }
+  populateGroupSelect();
+}
+function populateGroupSelect(selected) {
   const sel = $('groupSelect');
+  const known = new Set(state.collections.map(c => c.folder));
+  let extra = '';
+  if (selected && !known.has(selected)) extra = `<option value="${esc(selected)}">${esc(selected)} (not in collections.json)</option>`;
   sel.innerHTML = '<option value="">— No collection (standalone) —</option>' +
     state.collections.map(c => `<option value="${esc(c.folder)}">${esc(c.name)}</option>`).join('') +
+    extra +
     '<option value="__new__">+ New collection…</option>';
+  if (selected) sel.value = selected;
 }
 $('groupSelect').addEventListener('change', () => {
   $('newGroupFields').style.display = $('groupSelect').value === '__new__' ? '' : 'none';
@@ -223,13 +310,13 @@ function handleGpxFile(file) {
       state.parsed = GPXParser.parse(state.gpxText, file.name);
       state.gpxFile = file;
 
-      const prefixMatch = file.name.toLowerCase().match(/^(bike|hike|kayak|run)[-_]/);
-      if (prefixMatch) $('typeSelect').value = prefixMatch[1];
-      if (!$('nameInput').value) {
-        $('nameInput').value = guessNameFromFilename(state.parsed.name || file.name);
+      if (!state.editingEntry) {
+        const prefixMatch = file.name.toLowerCase().match(/^(bike|hike|kayak|run)[-_]/);
+        if (prefixMatch) $('typeSelect').value = prefixMatch[1];
+        if (!$('nameInput').value) $('nameInput').value = guessNameFromFilename(state.parsed.name || file.name);
       }
 
-      $('gpxDropLabel').textContent = '✓ ' + file.name;
+      $('gpxDropLabel').textContent = '✓ ' + file.name + (state.editingEntry ? ' (replaces current track)' : '');
       const m = state.parsed.metrics;
       $('gpxPreview').innerHTML =
         `<b>${m.distanceKm} km</b> · ↑${m.elevGain}m ↓${m.elevLoss}m · ${m.pointCount.toLocaleString()} points` +
@@ -243,7 +330,7 @@ function handleGpxFile(file) {
   reader.readAsText(file);
 }
 
-// ── Photos ────────────────────────────────────────────────────────────────────
+// ── Photos (new) ──────────────────────────────────────────────────────────────
 $('addPhotosBtn').addEventListener('click', () => $('photoFileInput').click());
 $('photoFileInput').addEventListener('change', () => {
   for (const file of $('photoFileInput').files) {
@@ -255,6 +342,7 @@ $('photoFileInput').addEventListener('change', () => {
 function renderPhotoGrid() {
   const grid = $('photoGrid');
   grid.innerHTML = '';
+  $('newPhotoLabel').style.display = state.photos.length ? '' : 'none';
   state.photos.forEach((p, i) => {
     const div = document.createElement('div');
     div.className = 'photo-thumb';
@@ -267,30 +355,44 @@ function renderPhotoGrid() {
     grid.appendChild(div);
   });
 }
+// ── Photos (existing, edit mode) ─────────────────────────────────────────────
+function renderExistingPhotoGrid() {
+  const grid = $('existingPhotoGrid');
+  grid.innerHTML = '';
+  $('existingPhotoLabel').style.display = state.keptPhotos.length ? '' : 'none';
+  state.keptPhotos.forEach(path => {
+    const div = document.createElement('div');
+    div.className = 'photo-thumb';
+    div.innerHTML = `<img src="${esc(path)}" alt=""><button type="button" title="Remove">✕</button>`;
+    div.querySelector('button').addEventListener('click', () => {
+      state.keptPhotos = state.keptPhotos.filter(p => p !== path);
+      state.removedPhotos.push(path);
+      renderExistingPhotoGrid();
+    });
+    grid.appendChild(div);
+  });
+}
 
-// ── Submit ────────────────────────────────────────────────────────────────────
+// ── Submit (add or edit) ──────────────────────────────────────────────────────
 $('uploadForm').addEventListener('submit', async e => {
   e.preventDefault();
   const btn = $('submitBtn');
-  btn.disabled = true; btn.textContent = 'Committing…';
+  const editing = !!state.editingEntry;
+  btn.disabled = true; btn.textContent = editing ? 'Saving…' : 'Committing…';
   try {
-    await submitRoute();
+    if (editing) await updateRoute();
+    else await createRoute();
   } catch (err) {
     logLine('✗ ' + esc(err.message), true);
   } finally {
-    btn.disabled = false; btn.textContent = 'Commit route';
+    btn.disabled = false; btn.textContent = editing ? 'Save changes' : 'Commit route';
   }
 });
 
-async function submitRoute() {
-  clearLog();
-  if (!state.token) throw new Error('Connect with a GitHub token first.');
-  if (!state.gpxFile || !state.parsed) throw new Error('Choose a GPX file first.');
-
+function readFormFields() {
   const type = $('typeSelect').value;
   const name = $('nameInput').value.trim();
   if (!name) throw new Error('Enter a route name.');
-
   const groupSel = $('groupSelect').value;
   const description = $('descInput').value.trim();
   const orderRaw = $('orderInput').value.trim();
@@ -307,6 +409,23 @@ async function submitRoute() {
     groupName = existing ? existing.name : groupSel;
   }
 
+  const order = orderRaw ? String(parseInt(orderRaw, 10)).padStart(3, '0') : null;
+  const safeName = name.replace(/[\\/:*?"<>|]/g, '').trim();
+  const filename = (order ? `${order}-${safeName}` : safeName) + '.gpx';
+  const folderSeg = groupFolder || 'ungrouped';
+
+  return { type, name, description, groupFolder, groupName, newCollectionEntry, filename, folderSeg };
+}
+
+async function createRoute() {
+  clearLog();
+  if (!state.token) throw new Error('Connect with a GitHub token first.');
+  if (!state.gpxFile || !state.parsed) throw new Error('Choose a GPX file first.');
+
+  const { type, name, description, groupFolder, groupName, newCollectionEntry, filename, folderSeg } = readFormFields();
+  const gpxPath = `data/gpx/${type}/${folderSeg}/${filename}`;
+  const id = makeId(type, groupFolder, filename);
+
   logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
   const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
   const latestCommitSha = ref.object.sha;
@@ -319,34 +438,15 @@ async function submitRoute() {
   ]);
   logLine(`✓ ${indexEntries.length} existing route(s) loaded`);
 
-  const order = orderRaw ? String(parseInt(orderRaw, 10)).padStart(3, '0') : null;
-  const safeName = name.replace(/[\\/:*?"<>|]/g, '').trim();
-  const filename = (order ? `${order}-${safeName}` : safeName) + '.gpx';
-  const folderSeg = groupFolder || 'ungrouped';
-  const gpxPath = `data/gpx/${type}/${folderSeg}/${filename}`;
-  const id = makeId(type, groupFolder, filename);
-
   if (indexEntries.some(en => en.id === id)) {
     throw new Error(`A route with id "${id}" already exists — change the name or stage number.`);
   }
 
   const metrics = state.parsed.metrics;
+  const adds = [{ path: gpxPath, content: state.gpxText, encoding: 'utf-8' }];
 
-  const filesToCommit = [{ path: gpxPath, content: state.gpxText, encoding: 'utf-8' }];
-
-  const photoPaths = [];
-  if (state.photos.length) {
-    logLine(`Encoding ${state.photos.length} photo(s)…`);
-    for (let i = 0; i < state.photos.length; i++) {
-      const p = state.photos[i];
-      const b64 = await fileToBase64(p.file);
-      const safePhotoName = p.file.name.replace(/[\\/:*?"<>|]/g, '').trim();
-      const photoPath = `data/images/${id}/${String(i + 1).padStart(2, '0')}-${safePhotoName}`;
-      filesToCommit.push({ path: photoPath, content: b64, encoding: 'base64' });
-      photoPaths.push(photoPath);
-    }
-    logLine('✓ Photos encoded');
-  }
+  const { adds: photoAdds, paths: photoPaths } = await encodeNewPhotos(state.photos, id);
+  adds.push(...photoAdds);
 
   let updatedCollections = collections;
   if (newCollectionEntry) updatedCollections = [...collections, newCollectionEntry];
@@ -361,42 +461,202 @@ async function submitRoute() {
     addedAt: new Date().toISOString(),
     metrics,
   };
-  const mergedEntries = [...indexEntries.filter(en => en.id !== id), newEntry];
+  const sortedEntries = resortIndex([...indexEntries, newEntry], updatedCollections);
+
+  adds.push({ path: 'data/index.json', content: JSON.stringify(sortedEntries, null, 2), encoding: 'utf-8' });
+  if (newCollectionEntry) {
+    adds.push({ path: 'data/collections.json', content: JSON.stringify(updatedCollections, null, 2), encoding: 'utf-8' });
+  }
+
+  logLine(`Uploading ${adds.length} file(s)…`);
+  await writeCommit({ message: `Add route: ${name}`, latestCommitSha, adds, deletes: [] });
+
+  logLine(`<b>Done.</b> Live in ~60s at <a href="route.html?id=${encodeURIComponent(id)}" target="_blank">route.html?id=${esc(id)}</a>`, false, true);
+  state.routesIndex = null;
+  resetForm();
+}
+
+async function updateRoute() {
+  clearLog();
+  const orig = state.editingEntry;
+  if (!orig) throw new Error('No route selected to edit.');
+  if (!state.token) throw new Error('Connect with a GitHub token first.');
+
+  const { type, name, description, groupFolder, groupName, newCollectionEntry, filename, folderSeg } = readFormFields();
+  const newGpxPath = `data/gpx/${type}/${folderSeg}/${filename}`;
+  const newId = makeId(type, groupFolder, filename);
+
+  logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
+  const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
+  const latestCommitSha = ref.object.sha;
+  logLine('✓ HEAD is ' + latestCommitSha.slice(0, 7));
+
+  const [indexEntries, collections] = await Promise.all([
+    fetchRawJson('data/index.json', latestCommitSha, []),
+    fetchRawJson('data/collections.json', latestCommitSha, []),
+  ]);
+  const current = indexEntries.find(en => en.id === orig.id);
+  if (!current) throw new Error('This route no longer exists in the index — someone may have deleted it. Reload the route list.');
+
+  if (newId !== orig.id && indexEntries.some(en => en.id === newId)) {
+    throw new Error(`A route with id "${newId}" already exists — change the name or stage number.`);
+  }
+
+  const adds = [];
+  const deletes = [];
+  const usingNewGpx = !!(state.gpxFile && state.gpxText && state.parsed);
+  const pathChanged = newGpxPath !== current.gpxPath;
+
+  let metrics = current.metrics;
+  if (usingNewGpx) {
+    metrics = state.parsed.metrics;
+    adds.push({ path: newGpxPath, content: state.gpxText, encoding: 'utf-8' });
+    if (pathChanged) deletes.push(current.gpxPath);
+    logLine('✓ Track replaced');
+  } else if (pathChanged) {
+    logLine('Moving GPX file (type/collection/name changed)…');
+    const treeMap = await getTreeMap(latestCommitSha);
+    const oldSha = treeMap.get(current.gpxPath);
+    if (!oldSha) throw new Error(`Could not find the current GPX file at ${current.gpxPath} in the repo.`);
+    adds.push({ path: newGpxPath, sha: oldSha });
+    deletes.push(current.gpxPath);
+  }
+
+  // Photos: move kept ones only if the route id changed (their path is keyed by id)
+  let finalPhotoPaths = [...state.keptPhotos];
+  if (newId !== orig.id && state.keptPhotos.length) {
+    logLine('Moving photos to new path…');
+    const treeMap = await getTreeMap(latestCommitSha);
+    finalPhotoPaths = [];
+    for (const p of state.keptPhotos) {
+      const sha = treeMap.get(p);
+      if (!sha) { logLine('⚠ Could not find ' + esc(p) + ' — skipping', true); continue; }
+      const newPath = p.replace(`data/images/${orig.id}/`, `data/images/${newId}/`);
+      adds.push({ path: newPath, sha });
+      deletes.push(p);
+      finalPhotoPaths.push(newPath);
+    }
+  }
+  for (const p of state.removedPhotos) deletes.push(p);
+
+  const { adds: photoAdds, paths: newPhotoPaths } = await encodeNewPhotos(state.photos, newId);
+  adds.push(...photoAdds);
+  finalPhotoPaths.push(...newPhotoPaths);
+
+  let updatedCollections = collections;
+  if (newCollectionEntry) updatedCollections = [...collections, newCollectionEntry];
+
+  const updatedEntry = {
+    id: newId, name, type,
+    group: groupFolder || null,
+    groupName: groupName || null,
+    description: description || null,
+    gpxPath: newGpxPath,
+    photos: finalPhotoPaths,
+    addedAt: current.addedAt,
+    metrics,
+  };
+  const mergedEntries = [...indexEntries.filter(en => en.id !== orig.id), updatedEntry];
   const sortedEntries = resortIndex(mergedEntries, updatedCollections);
 
-  filesToCommit.push({ path: 'data/index.json', content: JSON.stringify(sortedEntries, null, 2), encoding: 'utf-8' });
+  adds.push({ path: 'data/index.json', content: JSON.stringify(sortedEntries, null, 2), encoding: 'utf-8' });
   if (newCollectionEntry) {
-    filesToCommit.push({ path: 'data/collections.json', content: JSON.stringify(updatedCollections, null, 2), encoding: 'utf-8' });
+    adds.push({ path: 'data/collections.json', content: JSON.stringify(updatedCollections, null, 2), encoding: 'utf-8' });
   }
 
-  logLine(`Uploading ${filesToCommit.length} file(s)…`);
-  const baseCommit = await gh(`/repos/${OWNER}/${REPO}/git/commits/${latestCommitSha}`);
-  const baseTreeSha = baseCommit.tree.sha;
+  logLine(`Uploading ${adds.length} change(s)…`);
+  await writeCommit({ message: `Edit route: ${name}`, latestCommitSha, adds, deletes });
 
-  const treeEntries = [];
-  for (const f of filesToCommit) {
-    const blob = await gh(`/repos/${OWNER}/${REPO}/git/blobs`, { method: 'POST', body: { content: f.content, encoding: f.encoding } });
-    treeEntries.push({ path: f.path, mode: '100644', type: 'blob', sha: blob.sha });
-  }
-  logLine('✓ Blobs created');
+  logLine(`<b>Saved.</b> Live in ~60s at <a href="route.html?id=${encodeURIComponent(newId)}" target="_blank">route.html?id=${esc(newId)}</a>`, false, true);
+  state.routesIndex = null;
+  exitEditMode();
+}
 
-  const tree = await gh(`/repos/${OWNER}/${REPO}/git/trees`, { method: 'POST', body: { base_tree: baseTreeSha, tree: treeEntries } });
-  const commit = await gh(`/repos/${OWNER}/${REPO}/git/commits`, {
-    method: 'POST',
-    body: { message: `Add route: ${name}`, tree: tree.sha, parents: [latestCommitSha] },
-  });
-  logLine('✓ Commit created: ' + commit.sha.slice(0, 7));
+async function deleteRouteFlow(entry) {
+  const photoNote = entry.photos?.length ? ` and ${entry.photos.length} photo(s)` : '';
+  if (!confirm(`Delete "${entry.name}"?\n\nThis removes its GPX file${photoNote} and its entry from the map. This cannot be undone from here.`)) return;
 
+  clearLog();
+  const btn = $('deleteBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
   try {
-    await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`, { method: 'PATCH', body: { sha: commit.sha, force: false } });
-  } catch (e) {
-    throw new Error('Someone else pushed to the repo while this was running — the commit was created but not pushed. Retry.');
+    logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
+    const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
+    const latestCommitSha = ref.object.sha;
+
+    const [indexEntries, collections] = await Promise.all([
+      fetchRawJson('data/index.json', latestCommitSha, []),
+      fetchRawJson('data/collections.json', latestCommitSha, []),
+    ]);
+    const current = indexEntries.find(en => en.id === entry.id);
+    if (!current) throw new Error('Route not found — it may already be deleted. Reload the list.');
+
+    const deletes = [current.gpxPath, ...(current.photos || [])];
+    const remaining = indexEntries.filter(en => en.id !== entry.id);
+    const sorted = resortIndex(remaining, collections);
+    const adds = [{ path: 'data/index.json', content: JSON.stringify(sorted, null, 2), encoding: 'utf-8' }];
+
+    await writeCommit({ message: `Delete route: ${entry.name}`, latestCommitSha, adds, deletes });
+    logLine(`<b>Deleted "${esc(entry.name)}".</b>`, false, true);
+
+    state.routesIndex = null;
+    if (state.editingEntry && state.editingEntry.id === entry.id) exitEditMode();
+    renderRoutesList();
+  } catch (err) {
+    logLine('✗ ' + esc(err.message), true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Delete route'; }
   }
-  logLine('✓ Pushed to ' + esc(state.defaultBranch));
-  logLine(`<b>Done.</b> Live in ~60s at <a href="route.html?id=${encodeURIComponent(id)}" target="_blank">route.html?id=${esc(id)}</a>`, false, true);
+}
+$('deleteBtn').addEventListener('click', () => {
+  if (state.editingEntry) deleteRouteFlow(state.editingEntry);
+});
+
+// ── Edit mode ─────────────────────────────────────────────────────────────────
+function enterEditMode(entry) {
+  state.editingEntry = entry;
+  state.keptPhotos = [...(entry.photos || [])];
+  state.removedPhotos = [];
+  state.gpxFile = null; state.gpxText = null; state.parsed = null;
+  state.photos.forEach(p => URL.revokeObjectURL(p.url));
+  state.photos = [];
+
+  $('uploadCardTitle').textContent = 'Edit route';
+  $('uploadCardSub').textContent = 'Change any field and save — only what changed is committed. Drop a new GPX only if you want to replace the track.';
+  $('editBanner').style.display = '';
+  $('editBannerName').textContent = entry.name;
+  $('submitBtn').textContent = 'Save changes';
+  $('deleteBtn').style.display = '';
+
+  $('gpxDropLabel').innerHTML = `📂 Current: <code>${esc(entry.gpxPath.split('/').pop())}</code> — drop a file to replace it`;
+  $('gpxPreview').classList.remove('show');
+
+  $('typeSelect').value = entry.type;
+  $('nameInput').value = entry.name;
+  $('orderInput').value = orderFromGpxPath(entry.gpxPath);
+  $('descInput').value = entry.description || '';
+  populateGroupSelect(entry.group || '');
+  $('newGroupFields').style.display = 'none';
+
+  renderExistingPhotoGrid();
+  renderPhotoGrid();
+
+  $('uploadCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function exitEditMode() {
+  state.editingEntry = null;
+  state.keptPhotos = [];
+  state.removedPhotos = [];
+
+  $('uploadCardTitle').textContent = 'Add a route';
+  $('uploadCardSub').textContent = "Drop a GPX file, fill in the details, and it's committed straight to the repo. The live map picks it up in about a minute.";
+  $('editBanner').style.display = 'none';
+  $('submitBtn').textContent = 'Commit route';
+  $('deleteBtn').style.display = 'none';
 
   resetForm();
 }
+$('cancelEditBtn').addEventListener('click', exitEditMode);
 
 function resetForm() {
   $('uploadForm').reset();
@@ -406,7 +666,65 @@ function resetForm() {
   state.gpxFile = null; state.gpxText = null; state.parsed = null;
   state.photos.forEach(p => URL.revokeObjectURL(p.url));
   state.photos = [];
+  state.keptPhotos = []; state.removedPhotos = [];
   renderPhotoGrid();
+  renderExistingPhotoGrid();
+  populateGroupSelect();
+}
+
+// ── Existing routes browser ───────────────────────────────────────────────────
+const ACTIVITY_EMOJI = { bike:'🚴', hike:'🥾', kayak:'🛶', run:'🏃', other:'✦' };
+
+$('loadRoutesBtn').addEventListener('click', async () => {
+  const btn = $('loadRoutesBtn');
+  btn.disabled = true; btn.textContent = 'Loading…';
+  try {
+    state.routesIndex = await fetchRawJson('data/index.json', state.defaultBranch, []);
+    renderRoutesList();
+  } catch (e) {
+    $('routesList').innerHTML = `<div class="routes-empty">Could not load routes: ${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '↻ Load';
+  }
+});
+$('routesSearch').addEventListener('input', renderRoutesList);
+
+function renderRoutesList() {
+  const list = $('routesList');
+  if (!state.routesIndex) {
+    list.innerHTML = '<div class="routes-empty">Click Load to fetch the current route list.</div>';
+    return;
+  }
+  const q = $('routesSearch').value.trim().toLowerCase();
+  const rows = state.routesIndex
+    .filter(r => !q || r.name.toLowerCase().includes(q) || (r.groupName || '').toLowerCase().includes(q))
+    .sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
+
+  if (rows.length === 0) {
+    list.innerHTML = '<div class="routes-empty">No routes match.</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'route-row';
+    const km = r.metrics?.distanceKm ?? '?';
+    row.innerHTML = `
+      <span class="route-row-emoji">${ACTIVITY_EMOJI[r.type] || '✦'}</span>
+      <div class="route-row-info">
+        <div class="route-row-name">${esc(r.name)}</div>
+        <div class="route-row-meta">${km} km${r.groupName ? ' · ' + esc(r.groupName) : ''}</div>
+      </div>
+      <div class="route-row-actions">
+        <button type="button" class="btn btn-small" data-act="edit">Edit</button>
+        <button type="button" class="btn btn-small btn-danger" data-act="delete">Delete</button>
+      </div>
+    `;
+    row.querySelector('[data-act="edit"]').addEventListener('click', () => enterEditMode(r));
+    row.querySelector('[data-act="delete"]').addEventListener('click', () => deleteRouteFlow(r));
+    list.appendChild(row);
+  }
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────

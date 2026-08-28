@@ -23,6 +23,14 @@ anywhere but `api.github.com`):
    GitHub Action skips re-running — the index is already up to date.
 4. The route is live in about 60 seconds.
 
+The **Existing routes** panel further down the portal lists everything on
+the map (click **Load** — `data/index.json` isn't fetched until you ask for
+it). From there you can **edit** a route — rename it, move it between
+collections, replace its track, add or remove photos, change the
+description — or **delete** it outright. Both are single commits too;
+renaming or moving a route relocates its GPX/photo files in the same
+commit rather than re-uploading them.
+
 ### Option B — manual upload
 
 The folder a GPX file lives in drives everything, so you can still add
