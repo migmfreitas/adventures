@@ -95,36 +95,6 @@
     .map-color-icon { font-size: 12px; line-height: 1; opacity: .75; }
     .map-color-slider { width: 90px; accent-color: var(--accent); cursor: pointer; }
 
-    .drop-overlay { display: none; position: fixed; inset: 56px 0 0 0; z-index: 900; background: rgba(15,17,23,.85); backdrop-filter: blur(4px); align-items: center; justify-content: center; flex-direction: column; gap: 16px; border: 3px dashed var(--accent); pointer-events: none; }
-    .drop-overlay.active { display: flex; }
-    .drop-overlay p { font-size: 18px; font-weight: 500; }
-
-    .modal-backdrop { display: none; position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); align-items: center; justify-content: center; }
-    .modal-backdrop.open { display: flex; }
-    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: 460px; max-width: calc(100vw - 32px); }
-    .modal h2 { font-size: 16px; margin-bottom: 6px; }
-    .modal p.sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
-    .modal label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; font-family: 'IBM Plex Mono', monospace; }
-    .modal input[type=text], .modal select { width: 100%; padding: 9px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; font-family: 'Inter', sans-serif; margin-bottom: 16px; }
-    .modal input[type=text]:focus, .modal select:focus { outline: none; border-color: var(--accent); }
-    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
-    .drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 16px; transition: all .15s; }
-    .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); color: var(--text); }
-    .drop-zone input { display: none; }
-
-    .commit-files { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
-    .commit-file { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .commit-file-path { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--accent); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .commit-file-desc { font-size: 11px; color: var(--muted); margin-top: 3px; }
-    .btn-dl { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; white-space: nowrap; transition: all .15s; flex-shrink: 0; }
-    .btn-dl:hover { background: var(--accent); color: #fff; }
-    .commit-steps { margin: 0 0 20px; counter-reset: step; list-style: none; }
-    .commit-steps li { font-size: 13px; color: var(--muted); padding: 5px 0 5px 20px; position: relative; line-height: 1.5; }
-    .commit-steps li::before { content: counter(step); counter-increment: step; position: absolute; left: 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--accent); font-weight: 600; top: 6px; }
-    .commit-steps strong { color: var(--text); }
-    .code-block { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a8c7ff; white-space: pre; overflow-x: auto; margin-top: 6px; line-height: 1.7; }
-    .divider { height: 1px; background: var(--border); margin: 20px 0; }
-
     .leaflet-container { background: #e8e0d8 !important; }
     .leaflet-popup-content-wrapper { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 10px !important; color: var(--text) !important; box-shadow: 0 4px 24px rgba(0,0,0,.4) !important; }
     .leaflet-popup-tip { background: var(--surface) !important; }
@@ -139,7 +109,7 @@
 
 <header>
   <div class="logo">adventure<span>.</span>log</div>
-  <button class="btn btn-accent" id="importBtn">⌃ Add Route</button>
+  <a class="btn btn-accent" href="admin.html">⌃ Add Route</a>
 </header>
 
 <div class="layout">
@@ -167,71 +137,6 @@
     </div>
   </aside>
   <div id="map"></div>
-</div>
-
-<div class="drop-overlay" id="dropOverlay">
-  <div style="font-size:48px">📍</div>
-  <p>Drop GPX file to add a route</p>
-</div>
-
-<!-- Import modal -->
-<div class="modal-backdrop" id="modalBackdrop">
-  <div class="modal">
-    <h2>Add a new route</h2>
-    <p class="sub">Pick a GPX file, give it a name and type. The next step will give you the files to commit.</p>
-    <div class="drop-zone" id="modalDropZone">
-      <input type="file" id="fileInput" accept=".gpx" />
-      <div id="dropZoneLabel">📂 Drop GPX here or <u>browse</u></div>
-    </div>
-    <label>Route Name</label>
-    <input type="text" id="routeName" placeholder="e.g. Sintra coastal loop" />
-    <label>Activity</label>
-    <select id="activityType">
-      <option value="bike">🚴 Bike</option>
-      <option value="hike">🥾 Hike</option>
-      <option value="kayak">🛶 Kayak</option>
-      <option value="run">🏃 Run</option>
-      <option value="other">✦ Other</option>
-    </select>
-    <div class="modal-actions">
-      <button class="btn" id="cancelBtn">Cancel</button>
-      <button class="btn btn-accent" id="confirmBtn">Next →</button>
-    </div>
-  </div>
-</div>
-
-<!-- Commit modal -->
-<div class="modal-backdrop" id="commitModalBackdrop">
-  <div class="modal">
-    <h2>Commit these 2 files</h2>
-    <p class="sub">Download both files and add them to your repo at the paths shown. Once pushed, the route appears on the live site.</p>
-    <div class="commit-files">
-      <div class="commit-file">
-        <div>
-          <div class="commit-file-path" id="commitGpxPath"></div>
-          <div class="commit-file-desc">Your GPX track (unchanged)</div>
-        </div>
-        <button class="btn-dl" id="dlGpx">↓ Download</button>
-      </div>
-      <div class="commit-file">
-        <div>
-          <div class="commit-file-path" id="commitIndexPath"></div>
-          <div class="commit-file-desc">Updated route manifest (replaces existing)</div>
-        </div>
-        <button class="btn-dl" id="dlIndex">↓ Download</button>
-      </div>
-    </div>
-    <ol class="commit-steps">
-      <li>Download both files above</li>
-      <li>Place them in your repo at the paths shown — <strong>replace</strong> <code>data/index.json</code> with the new version</li>
-      <li>Commit and push:</li>
-    </ol>
-    <div class="code-block" id="commitSnippet"></div>
-    <div class="divider"></div>
-    <div class="modal-actions">
-      <button class="btn btn-accent" id="commitCloseBtn">Done</button>
-    </div>
-  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

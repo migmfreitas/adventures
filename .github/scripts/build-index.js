@@ -285,8 +285,11 @@ async function main() {
       type,
       group:       group || null,
       groupName:   resolvedGroupName || null,
-      description: col?.description || null,
+      // Per-route description (e.g. set via the admin portal) wins over the
+      // collection-level default; both survive a rebuild via existingMap.
+      description: existingMap[id]?.description || col?.description || null,
       gpxPath,
+      photos:      existingMap[id]?.photos || [],
       addedAt:     existingMap[id]?.addedAt || new Date().toISOString(),
       metrics,
     });

@@ -5,30 +5,54 @@ Runs entirely in the browser — no server, no database. Routes live as files in
 
 ## Adding a route
 
-1. Name your GPX file using this convention:
-   ```
-   <type>-<name-with-dashes>.gpx
-   ```
-   Examples:
-   ```
-   bike-sintra-coastal-loop.gpx   → 🚴 Sintra Coastal Loop
-   hike-serra-da-estrela.gpx      → 🥾 Serra Da Estrela
-   kayak-douro-estuary.gpx        → 🛶 Douro Estuary
-   run-porto-waterfront.gpx       → 🏃 Porto Waterfront
-   my-random-adventure.gpx        → ✦ My Random Adventure  (no type prefix = "other")
-   ```
-   Valid type prefixes: `bike`, `hike`, `kayak`, `run`. Anything else → `other`.
+### Option A — the admin portal (recommended)
 
-2. Upload the file to **`data/gpx/`** in your GitHub repo:
-   - Go to github.com → your repo → `data/gpx/`
-   - Click **Add file → Upload files**
-   - Drop the `.gpx` file in → **Commit changes**
+Open **[`admin.html`](admin.html)** on the live site. It's a small client-side
+portal that commits straight to this repo using a GitHub personal access
+token you supply (stored only in your browser's local storage — never sent
+anywhere but `api.github.com`):
 
-3. GitHub automatically runs the Action, parses the GPX, and updates `data/index.json`.
+1. Paste in a [fine-grained token](https://github.com/settings/personal-access-tokens/new)
+   scoped to **this repo only**, with **Contents: Read and write** permission.
+2. Drop a `.gpx` file, pick the activity type and (optionally) a collection,
+   and add a description and photos if you want them.
+3. Hit **Commit route**. The page parses the GPX, computes the same metrics
+   `build-index.js` would, and pushes the GPX file plus an updated
+   `data/index.json` (and `data/collections.json` for a new collection) as a
+   single commit. Because the commit message starts with `Add route:`, the
+   GitHub Action skips re-running — the index is already up to date.
+4. The route is live in about 60 seconds.
 
-4. ~60 seconds later the route appears on the live site. Done.
+### Option B — manual upload
 
-That's it — one file upload, everything else is automatic.
+The folder a GPX file lives in drives everything, so you can still add
+routes by hand through the GitHub UI:
+
+```
+data/gpx/<type>/<filename>.gpx                 → standalone route
+data/gpx/<type>/ungrouped/<filename>.gpx        → also standalone
+data/gpx/<type>/<Collection Name>/<NNN-name>.gpx → part of a multi-day collection
+```
+
+- Valid `<type>` values: `bike`, `hike`, `kayak`, `run`. Anything else → `other`.
+- The filename becomes the route name (title-cased, leading numbers like
+  `001-` stripped): `001-Stage 1 - Porto to Vagueira.gpx` → "Stage 1 - Porto To Vagueira".
+- A leading number (`001-`, `002-`, …) controls ordering within a collection.
+- To add a new collection or set its description, add an entry to
+  `data/collections.json` (`folder` must match the folder name exactly).
+
+Upload via **github.com → this repo → `data/gpx/…` → Add file → Upload
+files → Commit changes**. The Action then parses every GPX file and rebuilds
+`data/index.json` automatically — live in about 60 seconds.
+
+### Descriptions & photos
+
+Every route can carry an optional `description` and a `photos` array
+(paths under `data/images/<route-id>/`) — the admin portal writes these for
+you, and they render on the route's detail page. Adding them by hand means
+editing the route's entry in `data/index.json` directly (it's otherwise
+auto-generated, so per-route `description`/`photos` are the only fields
+`build-index.js` preserves rather than overwrites on rebuild).
 
 ---
 
@@ -62,14 +86,18 @@ That's it — one file upload, everything else is automatic.
   scripts/
     build-index.js      ← parses all GPX files, writes data/index.json
 data/
-  index.json            ← auto-generated manifest (don't edit by hand)
-  gpx/                  ← drop your GPX files here
+  index.json            ← auto-generated manifest (description/photos survive rebuilds)
+  collections.json      ← multi-day collection names, descriptions, ordering
+  gpx/                  ← GPX files, organized data/gpx/<type>/[<collection>|ungrouped]/
+  images/                ← photos uploaded via the admin portal, data/images/<route-id>/
 js/
-  gpx-parser.js         ← browser-side GPX parser (used by route detail page)
+  gpx-parser.js         ← browser-side GPX parser (route page + admin portal)
   store.js              ← fetches data/index.json and data/gpx/*.gpx
   app.js                ← map, sidebar, filters
+  admin.js               ← admin portal logic (commits via the GitHub API)
 index.html              ← overview map
-route.html              ← individual route: metrics, elevation profile, full map
+route.html              ← individual route: metrics, elevation profile, full map, description/photos
+admin.html              ← admin portal: add routes with descriptions and photos
 .nojekyll               ← disables Jekyll on GitHub Pages
 ```
 

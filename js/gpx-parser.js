@@ -123,8 +123,10 @@ const GPXParser = {
     const elevStep = Math.max(1, Math.floor(elevRaw.length / MAX_PROFILE));
     const elevProfile = elevRaw.filter((_, i) => i % elevStep === 0);
 
-    // Simplified path for overview map (RDP)
-    const simplified = this._simplify(points, 0.0001);
+    // Simplified path for overview map (RDP) — epsilon matches
+    // .github/scripts/build-index.js so client- and server-computed
+    // entries for the same GPX file are identical.
+    const simplified = this._simplify(points, 0.00001);
 
     return {
       distanceKm: Math.round(distanceKm * 10) / 10,

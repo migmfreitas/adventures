@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — Adventure Log</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #181c27; --surface2: #1f2435;
+      --border: #2a3048; --text: #e2e6f0; --muted: #7a849e; --accent: #e07840;
+      --success: #2ecc71; --danger: #e74c3c;
+    }
+    html, body { min-height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; }
+    a { color: inherit; }
+
+    header {
+      position: sticky; top: 0; z-index: 100; background: var(--surface); border-bottom: 1px solid var(--border);
+      height: 56px; display: flex; align-items: center; padding: 0 20px; gap: 16px;
+    }
+    .back-btn { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); text-decoration: none; display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); transition: all .15s; white-space: nowrap; }
+    .back-btn:hover { color: var(--text); }
+    .logo { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px; letter-spacing: 0.04em; }
+    .logo span.dot { color: var(--accent); }
+    .admin-tag { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 20px; padding: 2px 9px; margin-left: 8px; letter-spacing: .04em; }
+
+    .page { max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; display: flex; flex-direction: column; gap: 20px; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; }
+    .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .card p.sub { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; }
+
+    label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; font-family: 'IBM Plex Mono', monospace; }
+    .field { margin-bottom: 16px; }
+    .field:last-child { margin-bottom: 0; }
+    input[type=text], input[type=password], input[type=number], select, textarea {
+      width: 100%; padding: 9px 12px; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 13px; font-family: 'Inter', sans-serif;
+    }
+    textarea { resize: vertical; min-height: 70px; font-family: 'Inter', sans-serif; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    .hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+    .hint a { color: var(--accent); text-decoration: none; }
+    .hint a:hover { text-decoration: underline; }
+    .row { display: flex; gap: 12px; }
+    .row > .field { flex: 1; min-width: 0; }
+
+    .btn {
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500;
+      padding: 9px 16px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--text); cursor: pointer; transition: all .15s; letter-spacing: 0.03em;
+    }
+    .btn:hover { background: var(--border); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-accent:hover { background: #c86830; }
+    .btn-block { width: 100%; padding: 12px; font-size: 13px; }
+    .btn-small { padding: 5px 10px; font-size: 11px; }
+
+    .auth-connected { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .auth-connected-info { font-size: 13px; }
+    .auth-connected-info .repo { font-family: 'IBM Plex Mono', monospace; color: var(--accent); }
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--success); margin-right: 8px; }
+
+    .drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 22px; text-align: center; cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 4px; transition: all .15s; }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); color: var(--text); }
+    .drop-zone input { display: none; }
+    .gpx-preview { margin-top: 10px; padding: 10px 12px; background: var(--surface2); border-radius: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--muted); display: none; }
+    .gpx-preview.show { display: block; }
+    .gpx-preview b { color: var(--text); }
+
+    .photo-input-row { display: flex; align-items: center; gap: 10px; }
+    .photo-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .photo-thumb { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+    .photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .photo-thumb button { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(0,0,0,.65); color: #fff; font-size: 11px; line-height: 1; cursor: pointer; }
+
+    fieldset { border: none; padding: 0; margin: 0 0 16px; }
+    #newGroupFields { display: none; margin-top: 10px; padding: 12px; background: var(--surface2); border-radius: 8px; }
+
+    .log { font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 1.9; }
+    .log-line { color: var(--muted); }
+    .log-line.err { color: var(--danger); }
+    .log-line.ok { color: var(--success); }
+    .log-line a { color: var(--accent); }
+
+    @media (max-width: 560px) {
+      .row { flex-direction: column; gap: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="back-btn" href="index.html">← Map</a>
+  <div class="logo">adventure<span class="dot">.</span>log<span class="admin-tag">admin</span></div>
+</header>
+
+<div class="page">
+
+  <section class="card" id="authCard">
+    <h2>GitHub access</h2>
+    <p class="sub">This portal commits directly to <b>migmfreitas/adventures</b> using a personal access token. The token is stored only in this browser's local storage and is sent only to GitHub's API — never anywhere else.</p>
+
+    <div id="authForm">
+      <div class="field">
+        <label for="tokenInput">Personal access token</label>
+        <input type="password" id="tokenInput" placeholder="github_pat_…" autocomplete="off" />
+        <div class="hint">
+          Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> scoped to:
+          Resource owner → your account · Repository access → Only this repository (<b>adventures</b>) ·
+          Permissions → Repository → Contents: <b>Read and write</b>. Give it an expiry — you can always create a new one later.
+        </div>
+      </div>
+      <button class="btn btn-accent" id="connectBtn">Connect</button>
+    </div>
+
+    <div class="auth-connected" id="authConnected" style="display:none">
+      <div class="auth-connected-info"><span class="status-dot"></span>Connected to <span class="repo" id="connectedRepo"></span></div>
+      <button class="btn btn-small" id="disconnectBtn">Disconnect</button>
+    </div>
+  </section>
+
+  <section class="card" id="uploadCard" style="display:none">
+    <h2>Add a route</h2>
+    <p class="sub">Drop a GPX file, fill in the details, and it's committed straight to the repo. The live map picks it up in about a minute.</p>
+
+    <form id="uploadForm">
+      <div class="field">
+        <label>GPX file</label>
+        <div class="drop-zone" id="gpxDropZone">
+          <input type="file" id="gpxFileInput" accept=".gpx" />
+          <div id="gpxDropLabel">📂 Drop a .gpx file here or <u>browse</u></div>
+        </div>
+        <div class="gpx-preview" id="gpxPreview"></div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="nameInput">Route name</label>
+          <input type="text" id="nameInput" placeholder="e.g. Sintra Coastal Loop" required />
+        </div>
+        <div class="field">
+          <label for="typeSelect">Activity</label>
+          <select id="typeSelect">
+            <option value="bike">🚴 Bike</option>
+            <option value="hike">🥾 Hike</option>
+            <option value="kayak">🛶 Kayak</option>
+            <option value="run">🏃 Run</option>
+            <option value="other">✦ Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="groupSelect">Collection</label>
+          <select id="groupSelect">
+            <option value="">— No collection (standalone) —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="orderInput">Stage # <span style="text-transform:none">(optional)</span></label>
+          <input type="number" id="orderInput" min="1" placeholder="e.g. 1" />
+        </div>
+      </div>
+
+      <div id="newGroupFields">
+        <div class="field">
+          <label for="newGroupName">New collection name</label>
+          <input type="text" id="newGroupName" placeholder="e.g. EuroVelo 1" />
+        </div>
+        <div class="field">
+          <label for="newGroupDesc">New collection description</label>
+          <textarea id="newGroupDesc" placeholder="A short blurb shown above the routes in this collection"></textarea>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="descInput">Description <span style="text-transform:none">(optional)</span></label>
+        <textarea id="descInput" placeholder="Notes about this specific route — surface, highlights, conditions…"></textarea>
+      </div>
+
+      <div class="field">
+        <label>Photos <span style="text-transform:none">(optional)</span></label>
+        <div class="photo-input-row">
+          <button type="button" class="btn btn-small" id="addPhotosBtn">＋ Add photos</button>
+          <input type="file" id="photoFileInput" accept="image/*" multiple style="display:none" />
+        </div>
+        <div class="photo-grid" id="photoGrid"></div>
+      </div>
+
+      <div class="field" style="margin-top: 22px">
+        <button type="submit" class="btn btn-accent btn-block" id="submitBtn">Commit route</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card" id="logCard" style="display:none">
+    <h2>Progress</h2>
+    <div class="log" id="logLines"></div>
+  </section>
+
+</div>
+
+<script src="js/gpx-parser.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>
