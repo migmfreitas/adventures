@@ -33,6 +33,9 @@ const state = {
   routesIndex: null,   // cached data/index.json, loaded lazily for the browser
   treeCache: null,      // { commitSha, map: Map<path, blobSha> }
   reordering: false,    // true while a reorder commit is in flight (disables the arrows)
+  editingCollectionFolder: null, // folder of the collection whose name/description form is open, or null
+  bulkFiles: [],        // { file, text, parsed, name, type, error } — staged for the bulk-upload commit
+  bulkCommitting: false, // true while a bulk commit is in flight (disables the commit button)
 };
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -246,6 +249,7 @@ async function connect(token) {
   $('authForm').style.display = 'none';
   $('authConnected').style.display = '';
   $('uploadCard').style.display = '';
+  $('bulkCard').style.display = '';
   $('routesCard').style.display = '';
   $('collectionsCard').style.display = '';
   await loadCollections();
@@ -257,11 +261,14 @@ function disconnect() {
   $('authForm').style.display = '';
   $('authConnected').style.display = 'none';
   $('uploadCard').style.display = 'none';
+  $('bulkCard').style.display = 'none';
   $('routesCard').style.display = 'none';
   $('collectionsCard').style.display = 'none';
   $('tokenInput').value = '';
   state.routesIndex = null;
   state.treeCache = null;
+  state.editingCollectionFolder = null;
+  state.bulkFiles = [];
 }
 
 $('connectBtn').addEventListener('click', async () => {
@@ -287,11 +294,12 @@ async function loadCollections() {
   } catch (e) {
     state.collections = [];
   }
-  populateGroupSelect();
+  populateGroupSelect('groupSelect');
+  populateGroupSelect('bulkGroupSelect');
   renderCollectionsList();
 }
-function populateGroupSelect(selected) {
-  const sel = $('groupSelect');
+function populateGroupSelect(selectId, selected) {
+  const sel = $(selectId);
   const known = new Set(state.collections.map(c => c.folder));
   let extra = '';
   if (selected && !known.has(selected)) extra = `<option value="${esc(selected)}">${esc(selected)} (not in collections.json)</option>`;
@@ -303,6 +311,9 @@ function populateGroupSelect(selected) {
 }
 $('groupSelect').addEventListener('change', () => {
   $('newGroupFields').style.display = $('groupSelect').value === '__new__' ? '' : 'none';
+});
+$('bulkGroupSelect').addEventListener('change', () => {
+  $('bulkNewGroupFields').style.display = $('bulkGroupSelect').value === '__new__' ? '' : 'none';
 });
 
 // ── GPX drop / parse ──────────────────────────────────────────────────────────
@@ -496,6 +507,11 @@ async function createRoute() {
 
   logLine(`<b>Done.</b> Live in ~60s at <a href="route.html?id=${encodeURIComponent(id)}" target="_blank">route.html?id=${esc(id)}</a>`, false, true);
   state.routesIndex = null;
+  if (newCollectionEntry) {
+    state.collections = updatedCollections;
+    populateGroupSelect('bulkGroupSelect');
+    renderCollectionsList();
+  }
   resetForm();
 }
 
@@ -600,6 +616,11 @@ async function updateRoute() {
 
   logLine(`<b>Saved.</b> Live in ~60s at <a href="route.html?id=${encodeURIComponent(newId)}" target="_blank">route.html?id=${esc(newId)}</a>`, false, true);
   state.routesIndex = null;
+  if (newCollectionEntry) {
+    state.collections = updatedCollections;
+    populateGroupSelect('bulkGroupSelect');
+    renderCollectionsList();
+  }
   exitEditMode();
 }
 
@@ -666,7 +687,7 @@ function enterEditMode(entry) {
   $('nameInput').value = entry.name;
   $('orderInput').value = typeof entry.order === 'number' ? entry.order + 1 : '';
   $('descInput').value = entry.description || '';
-  populateGroupSelect(entry.group || '');
+  populateGroupSelect('groupSelect', entry.group || '');
   $('newGroupFields').style.display = 'none';
 
   renderExistingPhotoGrid();
@@ -700,7 +721,7 @@ function resetForm() {
   state.keptPhotos = []; state.removedPhotos = [];
   renderPhotoGrid();
   renderExistingPhotoGrid();
-  populateGroupSelect();
+  populateGroupSelect('groupSelect');
 }
 
 // ── Collections browser (reorder) ───────────────────────────────────────────
@@ -714,6 +735,10 @@ function renderCollectionsList() {
   list.style.pointerEvents = state.reordering ? 'none' : '';
   list.innerHTML = '';
   state.collections.forEach((c, i) => {
+    if (state.editingCollectionFolder === c.folder) {
+      list.appendChild(makeCollectionEditForm(c));
+      return;
+    }
     const count = state.routesIndex ? state.routesIndex.filter(r => r.group === c.folder).length : null;
     const canUp = i > 0, canDown = i < state.collections.length - 1;
     const row = document.createElement('div');
@@ -727,11 +752,102 @@ function renderCollectionsList() {
         <div class="collection-row-name">${esc(c.name)}</div>
         <div class="collection-row-meta">${count !== null ? count + ' route' + (count === 1 ? '' : 's') : esc(c.folder)}</div>
       </div>
+      <div class="collection-row-actions">
+        <button type="button" class="btn btn-small" data-act="edit">Edit</button>
+      </div>
     `;
     if (canUp) row.querySelector('[data-act="up"]').addEventListener('click', () => moveCollectionOrder(c.folder, -1));
     if (canDown) row.querySelector('[data-act="down"]').addEventListener('click', () => moveCollectionOrder(c.folder, 1));
+    row.querySelector('[data-act="edit"]').addEventListener('click', () => {
+      state.editingCollectionFolder = c.folder;
+      renderCollectionsList();
+    });
     list.appendChild(row);
   });
+}
+
+function makeCollectionEditForm(c) {
+  const wrap = document.createElement('div');
+  wrap.className = 'collection-edit-form';
+  wrap.innerHTML = `
+    <div class="field">
+      <label>Name</label>
+      <input type="text" class="ce-name" value="${esc(c.name)}" />
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea class="ce-desc">${esc(c.description || '')}</textarea>
+    </div>
+    <div class="btn-row">
+      <button type="button" class="btn btn-accent btn-block" data-act="save">Save</button>
+      <button type="button" class="btn" data-act="cancel">Cancel</button>
+    </div>
+  `;
+  wrap.querySelector('[data-act="cancel"]').addEventListener('click', () => {
+    state.editingCollectionFolder = null;
+    renderCollectionsList();
+  });
+  wrap.querySelector('[data-act="save"]').addEventListener('click', () => {
+    const name = wrap.querySelector('.ce-name').value.trim();
+    const description = wrap.querySelector('.ce-desc').value.trim();
+    if (!name) { alert('Enter a collection name.'); return; }
+    saveCollectionEdit(c.folder, name, description);
+  });
+  return wrap;
+}
+
+async function saveCollectionEdit(folder, name, description) {
+  if (state.reordering) return;
+  state.reordering = true;
+  renderCollectionsList();
+  clearLog();
+  try {
+    logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
+    const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
+    const latestCommitSha = ref.object.sha;
+
+    const [indexEntries, collections] = await Promise.all([
+      fetchRawJson('data/index.json', latestCommitSha, []),
+      fetchRawJson('data/collections.json', latestCommitSha, []),
+    ]);
+    const idx = collections.findIndex(c => c.folder === folder);
+    if (idx === -1) throw new Error('Collection no longer exists — reload and try again.');
+
+    const updatedCollections = [...collections];
+    updatedCollections[idx] = { ...updatedCollections[idx], name, description };
+
+    // groupName is denormalized onto every entry in index.json (so route.html
+    // and the map don't need to cross-reference collections.json), so a
+    // rename has to be propagated to every entry in this collection too.
+    const key = collectionKey(folder);
+    const updatedEntries = indexEntries.map(e =>
+      e.group && collectionKey(e.group) === key ? { ...e, groupName: name } : e);
+
+    const sortedEntries = resortIndex(updatedEntries, updatedCollections);
+    logLine('Uploading updated collection…');
+    await writeCommit({
+      message: `Update collection: ${name}`,
+      latestCommitSha,
+      adds: [
+        { path: 'data/index.json', content: JSON.stringify(sortedEntries, null, 2), encoding: 'utf-8' },
+        { path: 'data/collections.json', content: JSON.stringify(updatedCollections, null, 2), encoding: 'utf-8' },
+      ],
+      deletes: [],
+    });
+
+    state.collections = updatedCollections;
+    state.routesIndex = sortedEntries;
+    state.editingCollectionFolder = null;
+    populateGroupSelect('groupSelect', $('groupSelect').value);
+    populateGroupSelect('bulkGroupSelect', $('bulkGroupSelect').value);
+    logLine('<b>Saved.</b>', false, true);
+  } catch (err) {
+    logLine('✗ ' + esc(err.message), true);
+  } finally {
+    state.reordering = false;
+    renderCollectionsList();
+    renderRoutesList();
+  }
 }
 
 async function moveCollectionOrder(folder, direction) {
@@ -779,6 +895,212 @@ async function moveCollectionOrder(folder, direction) {
     state.reordering = false;
     renderCollectionsList();
     renderRoutesList();
+  }
+}
+
+// ── Bulk upload ───────────────────────────────────────────────────────────────
+// Stages several GPX files client-side (parsed, named, typed), then writes
+// them all — plus one shared updated index.json/collections.json — as a
+// single commit. Fine-grained organizing (per-route description, moving to a
+// different collection, reordering) happens afterward via "Existing routes",
+// same as for a route added one at a time.
+function guessTypeFromFilename(filename) {
+  const m = filename.toLowerCase().match(/^(bike|hike|kayak|run)[-_]/);
+  return m ? m[1] : $('bulkTypeSelect').value;
+}
+
+async function handleBulkFiles(fileList) {
+  const files = [...fileList].filter(f => f.name.toLowerCase().endsWith('.gpx'));
+  if (!files.length) { alert('Please choose .gpx files.'); return; }
+  for (const file of files) {
+    const entry = { file, text: null, parsed: null, name: '', type: guessTypeFromFilename(file.name), error: null };
+    try {
+      const text = await file.text();
+      const parsed = GPXParser.parse(text, file.name);
+      entry.text = text;
+      entry.parsed = parsed;
+      entry.name = guessNameFromFilename(parsed.name || file.name);
+    } catch (err) {
+      entry.error = err.message;
+    }
+    state.bulkFiles.push(entry);
+  }
+  renderBulkList();
+}
+
+const bulkDropZone = $('bulkDropZone');
+bulkDropZone.addEventListener('click', () => $('bulkFileInput').click());
+$('bulkFileInput').addEventListener('change', () => {
+  if ($('bulkFileInput').files.length) handleBulkFiles($('bulkFileInput').files);
+  $('bulkFileInput').value = '';
+});
+bulkDropZone.addEventListener('dragover', e => { e.preventDefault(); bulkDropZone.classList.add('dragover'); });
+bulkDropZone.addEventListener('dragleave', () => bulkDropZone.classList.remove('dragover'));
+bulkDropZone.addEventListener('drop', e => {
+  e.preventDefault(); bulkDropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleBulkFiles(e.dataTransfer.files);
+});
+$('bulkClearBtn').addEventListener('click', () => {
+  state.bulkFiles = [];
+  renderBulkList();
+});
+
+function renderBulkList() {
+  const list = $('bulkList');
+  const validCount = state.bulkFiles.filter(f => !f.error).length;
+  $('bulkCommitBtn').disabled = validCount === 0 || state.bulkCommitting;
+  $('bulkCommitBtn').textContent = state.bulkCommitting ? 'Committing…' :
+    (validCount ? `Commit ${validCount} route${validCount === 1 ? '' : 's'}` : 'Commit routes');
+  $('bulkClearBtn').style.display = state.bulkFiles.length ? '' : 'none';
+
+  list.innerHTML = '';
+  if (!state.bulkFiles.length) {
+    list.innerHTML = '<div class="routes-empty">No files added yet.</div>';
+    return;
+  }
+
+  state.bulkFiles.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'bulk-row';
+    if (f.error) {
+      row.innerHTML = `
+        <div class="bulk-row-info">
+          <div class="bulk-row-filename">${esc(f.file.name)}</div>
+          <div class="bulk-row-error">✗ Could not parse: ${esc(f.error)}</div>
+        </div>
+        <button type="button" class="btn btn-small btn-danger bulk-row-remove" data-act="remove">✕</button>
+      `;
+    } else {
+      const m = f.parsed.metrics;
+      row.innerHTML = `
+        <div class="bulk-row-info">
+          <div class="bulk-row-filename">${esc(f.file.name)}</div>
+          <div class="bulk-row-fields">
+            <input type="text" class="br-name" value="${esc(f.name)}" placeholder="Route name" />
+            <select class="br-type">
+              <option value="bike">🚴 Bike</option>
+              <option value="hike">🥾 Hike</option>
+              <option value="kayak">🛶 Kayak</option>
+              <option value="run">🏃 Run</option>
+              <option value="other">✦ Other</option>
+            </select>
+          </div>
+          <div class="bulk-row-meta">${m.distanceKm} km · ↑${m.elevGain}m ↓${m.elevLoss}m · ${m.pointCount.toLocaleString()} points</div>
+        </div>
+        <button type="button" class="btn btn-small btn-danger bulk-row-remove" data-act="remove">✕</button>
+      `;
+      row.querySelector('.br-type').value = f.type;
+      row.querySelector('.br-name').addEventListener('input', e => { f.name = e.target.value; });
+      row.querySelector('.br-type').addEventListener('change', e => { f.type = e.target.value; });
+    }
+    row.querySelector('[data-act="remove"]').addEventListener('click', () => {
+      state.bulkFiles.splice(i, 1);
+      renderBulkList();
+    });
+    list.appendChild(row);
+  });
+}
+
+$('bulkCommitBtn').addEventListener('click', () => commitBulk());
+
+async function commitBulk() {
+  clearLog();
+  if (!state.token) { logLine('✗ Connect with a GitHub token first.', true); return; }
+  const validRows = state.bulkFiles.filter(f => !f.error);
+  if (!validRows.length) { logLine('✗ No valid GPX files to commit.', true); return; }
+  for (const row of validRows) {
+    if (!row.name.trim()) { logLine(`✗ "${esc(row.file.name)}" needs a route name.`, true); return; }
+  }
+
+  const groupSel = $('bulkGroupSelect').value;
+  let groupFolder = null, groupName = null, newCollectionEntry = null;
+  if (groupSel === '__new__') {
+    groupFolder = $('bulkNewGroupName').value.trim();
+    if (!groupFolder) { logLine('✗ Enter a name for the new collection.', true); return; }
+    groupName = groupFolder;
+    newCollectionEntry = { folder: groupFolder, name: groupName, description: $('bulkNewGroupDesc').value.trim() };
+  } else if (groupSel) {
+    groupFolder = groupSel;
+    const existing = state.collections.find(c => c.folder === groupSel);
+    groupName = existing ? existing.name : groupSel;
+  }
+
+  const btn = $('bulkCommitBtn');
+  state.bulkCommitting = true;
+  btn.disabled = true; btn.textContent = 'Committing…';
+  try {
+    logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
+    const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
+    const latestCommitSha = ref.object.sha;
+
+    logLine('Fetching current index.json and collections.json…');
+    const [indexEntries, collections] = await Promise.all([
+      fetchRawJson('data/index.json', latestCommitSha, []),
+      fetchRawJson('data/collections.json', latestCommitSha, []),
+    ]);
+
+    const existingIds = new Set(indexEntries.map(en => en.id));
+    const folderSeg = groupFolder || 'ungrouped';
+    const newEntries = [];
+    const adds = [];
+    const seenIds = new Set();
+
+    for (const row of validRows) {
+      const name = row.name.trim();
+      const type = row.type;
+      const safeName = name.replace(/[\\/:*?"<>|]/g, '').trim();
+      const filename = safeName + '.gpx';
+      const gpxPath = `data/gpx/${type}/${folderSeg}/${filename}`;
+      const id = makeId(type, groupFolder, filename);
+      if (existingIds.has(id) || seenIds.has(id)) {
+        throw new Error(`A route with id "${id}" already exists (from "${name}") — rename it and try again.`);
+      }
+      seenIds.add(id);
+
+      adds.push({ path: gpxPath, content: row.text, encoding: 'utf-8' });
+      newEntries.push({
+        id, name, type,
+        group: groupFolder || null,
+        groupName: groupName || null,
+        description: null,
+        gpxPath,
+        photos: [],
+        addedAt: new Date().toISOString(),
+        metrics: row.parsed.metrics,
+        ...(groupFolder ? { order: Infinity } : {}),
+      });
+    }
+
+    let updatedCollections = collections;
+    if (newCollectionEntry) updatedCollections = [...collections, newCollectionEntry];
+
+    const sortedEntries = resortIndex([...indexEntries, ...newEntries], updatedCollections);
+    adds.push({ path: 'data/index.json', content: JSON.stringify(sortedEntries, null, 2), encoding: 'utf-8' });
+    if (newCollectionEntry) {
+      adds.push({ path: 'data/collections.json', content: JSON.stringify(updatedCollections, null, 2), encoding: 'utf-8' });
+    }
+
+    logLine(`Uploading ${adds.length} file(s) for ${newEntries.length} route(s)…`);
+    await writeCommit({
+      message: `Bulk add ${newEntries.length} route${newEntries.length === 1 ? '' : 's'}${groupName ? ' to ' + groupName : ''}`,
+      latestCommitSha, adds, deletes: [],
+    });
+
+    state.collections = updatedCollections;
+    state.routesIndex = sortedEntries;
+    logLine(`<b>Done.</b> Added ${newEntries.length} route(s). Reorder or edit them from "Existing routes" below.`, false, true);
+
+    state.bulkFiles = [];
+    populateGroupSelect('groupSelect');
+    populateGroupSelect('bulkGroupSelect');
+    $('bulkNewGroupFields').style.display = 'none';
+    renderCollectionsList();
+    renderRoutesList();
+  } catch (err) {
+    logLine('✗ ' + esc(err.message), true);
+  } finally {
+    state.bulkCommitting = false;
+    renderBulkList();
   }
 }
 
