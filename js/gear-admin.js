@@ -18,6 +18,7 @@ const state = {
   token: localStorage.getItem(TOKEN_KEY) || '',
   defaultBranch: null,
   gear: [],
+  routes: [],            // data/index.json, loaded read-only just to show ride count/distance per bike
   editingBikeId: null,   // id of the bike currently being edited in the form, or null
   addingLogFor: null,    // id of the bike whose "add entry" mini-form is open, or null
 };
@@ -160,6 +161,11 @@ async function loadGear() {
   } catch (e) {
     state.gear = [];
   }
+  try {
+    state.routes = await fetchRawJson('data/index.json', state.defaultBranch, []);
+  } catch (e) {
+    state.routes = [];
+  }
   renderBikesList();
 }
 
@@ -292,12 +298,20 @@ function renderBikeRow(bike) {
 
   const top = document.createElement('div');
   top.className = 'bike-row-top';
-  const km = (bike.maintenanceLog || []).length;
+  const logCount = (bike.maintenanceLog || []).length;
+  const rides = state.routes.filter(r => r.gearId === bike.id);
+  const totalKm = rides.reduce((sum, r) => sum + (Number(r.metrics?.distanceKm) || 0), 0);
+  const meta = [
+    `${logCount} log entr${logCount === 1 ? 'y' : 'ies'}`,
+    `${rides.length} ride${rides.length === 1 ? '' : 's'}`,
+    totalKm ? `${totalKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km` : '',
+    bike.brand,
+  ].filter(Boolean).join(' · ');
   top.innerHTML = `
     <span class="bike-row-emoji">${BIKE_TYPE_EMOJI[bike.type] || '✦'}</span>
     <div class="bike-row-info">
       <div class="bike-row-name">${esc(bike.name)}</div>
-      <div class="bike-row-meta">${km} log entr${km === 1 ? 'y' : 'ies'}${bike.brand ? ' · ' + esc(bike.brand) : ''}</div>
+      <div class="bike-row-meta">${meta}</div>
     </div>
     <div class="bike-row-actions">
       <button type="button" class="btn btn-small" data-act="edit">Edit</button>

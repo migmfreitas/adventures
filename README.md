@@ -90,6 +90,18 @@ connecting once on either page covers both), add or edit a bike, and log
 maintenance against it. Every change is a single commit straight to
 `data/gear.json`, live on the gear page in about 60 seconds.
 
+### Tracking distance per bike
+
+A route can be tagged with the bike it was ridden on: pick one from the
+**Bike** field when adding or editing a route in `admin.html` (or once for
+a whole batch in the bulk-upload form) — it's stored as `gearId` on the
+route's `data/index.json` entry. The gear page then sums that up
+automatically: each bike shows its ride count, total distance, and distance
+since its last maintenance log entry, plus a list of the actual rides
+(linking back to `route.html`). No manual mileage tracking required —
+log a service, keep tagging your rides, and "since last service" stays
+accurate on its own.
+
 ---
 
 ## Deploy to GitHub Pages

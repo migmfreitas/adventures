@@ -65,6 +65,15 @@
     .log-entry-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 4px; }
     .log-empty { color: var(--muted); font-size: 12.5px; padding: 8px 0; }
 
+    .ride-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 18px; }
+    .ride-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); text-decoration: none; color: inherit; transition: opacity .15s; }
+    .ride-row:hover { opacity: .75; }
+    .ride-row:last-child { border-bottom: none; }
+    .ride-row-info { min-width: 0; }
+    .ride-row-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ride-row-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .ride-row-dist { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--accent); flex-shrink: 0; }
+
     @media (max-width: 560px) {
       .bike-stats { grid-template-columns: 1fr 1fr; }
       .log-entry { flex-direction: column; gap: 4px; }

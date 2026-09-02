@@ -486,6 +486,17 @@ function makeChart({ canvasId, tooltipId, resetBtnId, data, color, yUnit, statsE
   const route=index.find(r=>r.id===id);
   if(!route){ showError('Route not found. <a href="index.html">← Back</a>'); return; }
 
+  let bike=null;
+  if(route.gearId){
+    try{
+      const gearRes=await fetch('data/gear.json?_='+Date.now());
+      if(gearRes.ok){
+        const bikes=await gearRes.json();
+        bike=bikes.find(b=>b.id===route.gearId)||null;
+      }
+    } catch(e){ console.warn('gear.json load failed:',e.message); }
+  }
+
   let points=[];
   try{
     const gpxText=await Store.loadGPX(id);
@@ -502,11 +513,11 @@ function makeChart({ canvasId, tooltipId, resetBtnId, data, color, yUnit, statsE
 
   // Always render — stateMsg hidden, page shown regardless of GPX fetch result
   document.getElementById('stateMsg').style.display='none';
-  renderPage(route,points);
+  renderPage(route,points,bike);
 })();
 
 // ── Render ────────────────────────────────────────────────────────────────────
-function renderPage(route,points){
+function renderPage(route,points,bike){
   document.getElementById('pageContent').style.display='';
 
   const m=route.metrics;
@@ -650,6 +661,11 @@ function renderPage(route,points){
     tr.innerHTML=`<td>${esc(lbl)}</td><td>${esc(String(val))}</td>`;
     table.appendChild(tr);
   });
+  if(bike){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>Bike</td><td><a href="gear.html" style="color:inherit">${esc(bike.name)}</a></td>`;
+    table.appendChild(tr);
+  }
 }
 </script>
 </body>

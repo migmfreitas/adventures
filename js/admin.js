@@ -23,6 +23,7 @@ const state = {
   token: localStorage.getItem(TOKEN_KEY) || '',
   defaultBranch: null,
   collections: [],
+  gear: [],            // bikes loaded from data/gear.json, for the per-route "Bike" select
   gpxFile: null,
   gpxText: null,
   parsed: null,
@@ -253,6 +254,7 @@ async function connect(token) {
   $('routesCard').style.display = '';
   $('collectionsCard').style.display = '';
   await loadCollections();
+  await loadGear();
 }
 function disconnect() {
   state.token = '';
@@ -269,6 +271,7 @@ function disconnect() {
   state.treeCache = null;
   state.editingCollectionFolder = null;
   state.bulkFiles = [];
+  state.gear = [];
 }
 
 $('connectBtn').addEventListener('click', async () => {
@@ -309,6 +312,24 @@ function populateGroupSelect(selectId, selected) {
     '<option value="__new__">+ New collection…</option>';
   if (selected) sel.value = selected;
 }
+async function loadGear() {
+  try {
+    const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
+    state.gear = await fetchRawJson('data/gear.json', ref.object.sha, []);
+  } catch (e) {
+    state.gear = [];
+  }
+  populateGearSelect('gearSelect');
+  populateGearSelect('bulkGearSelect');
+}
+function populateGearSelect(selectId, selected) {
+  const sel = $(selectId);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— No bike —</option>' +
+    state.gear.map(b => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('');
+  if (selected) sel.value = selected;
+}
+
 $('groupSelect').addEventListener('change', () => {
   $('newGroupFields').style.display = $('groupSelect').value === '__new__' ? '' : 'none';
 });
@@ -424,6 +445,7 @@ function readFormFields() {
   const groupSel = $('groupSelect').value;
   const description = $('descInput').value.trim();
   const orderRaw = $('orderInput').value.trim();
+  const gearId = $('gearSelect').value || null;
 
   let groupFolder = null, groupName = null, newCollectionEntry = null;
   if (groupSel === '__new__') {
@@ -446,7 +468,7 @@ function readFormFields() {
   const safeName = name.replace(/[\\/:*?"<>|]/g, '').trim();
   const folderSeg = groupFolder || 'ungrouped';
 
-  return { type, name, description, groupFolder, groupName, newCollectionEntry, orderSortKey, safeName, folderSeg };
+  return { type, name, description, groupFolder, groupName, newCollectionEntry, orderSortKey, safeName, folderSeg, gearId };
 }
 
 async function createRoute() {
@@ -454,7 +476,7 @@ async function createRoute() {
   if (!state.token) throw new Error('Connect with a GitHub token first.');
   if (!state.gpxFile || !state.parsed) throw new Error('Choose a GPX file first.');
 
-  const { type, name, description, groupFolder, groupName, newCollectionEntry, orderSortKey, safeName, folderSeg } = readFormFields();
+  const { type, name, description, groupFolder, groupName, newCollectionEntry, orderSortKey, safeName, folderSeg, gearId } = readFormFields();
   const filename = safeName + '.gpx';
   const gpxPath = `data/gpx/${type}/${folderSeg}/${filename}`;
   const id = makeId(type, groupFolder, filename);
@@ -493,6 +515,7 @@ async function createRoute() {
     photos: photoPaths,
     addedAt: new Date().toISOString(),
     metrics,
+    gearId,
     ...(groupFolder ? { order: orderSortKey } : {}),
   };
   const sortedEntries = resortIndex([...indexEntries, newEntry], updatedCollections);
@@ -521,7 +544,7 @@ async function updateRoute() {
   if (!orig) throw new Error('No route selected to edit.');
   if (!state.token) throw new Error('Connect with a GitHub token first.');
 
-  const { type, name, description, groupFolder, groupName, newCollectionEntry, orderSortKey, safeName, folderSeg } = readFormFields();
+  const { type, name, description, groupFolder, groupName, newCollectionEntry, orderSortKey, safeName, folderSeg, gearId } = readFormFields();
 
   logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
   const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
@@ -601,6 +624,7 @@ async function updateRoute() {
     photos: finalPhotoPaths,
     addedAt: current.addedAt,
     metrics,
+    gearId,
     ...(groupFolder ? { order: orderSortKey } : {}),
   };
   const mergedEntries = [...indexEntries.filter(en => en.id !== orig.id), updatedEntry];
@@ -689,6 +713,7 @@ function enterEditMode(entry) {
   $('descInput').value = entry.description || '';
   populateGroupSelect('groupSelect', entry.group || '');
   $('newGroupFields').style.display = 'none';
+  populateGearSelect('gearSelect', entry.gearId || '');
 
   renderExistingPhotoGrid();
   renderPhotoGrid();
@@ -722,6 +747,7 @@ function resetForm() {
   renderPhotoGrid();
   renderExistingPhotoGrid();
   populateGroupSelect('groupSelect');
+  populateGearSelect('gearSelect');
 }
 
 // ── Collections browser (reorder) ───────────────────────────────────────────
@@ -1013,6 +1039,7 @@ async function commitBulk() {
   }
 
   const groupSel = $('bulkGroupSelect').value;
+  const gearId = $('bulkGearSelect').value || null;
   let groupFolder = null, groupName = null, newCollectionEntry = null;
   if (groupSel === '__new__') {
     groupFolder = $('bulkNewGroupName').value.trim();
@@ -1067,6 +1094,7 @@ async function commitBulk() {
         photos: [],
         addedAt: new Date().toISOString(),
         metrics: row.parsed.metrics,
+        gearId,
         ...(groupFolder ? { order: Infinity } : {}),
       });
     }
@@ -1126,6 +1154,7 @@ function makeRouteRow(r, reorder) {
   const row = document.createElement('div');
   row.className = 'route-row';
   const km = r.metrics?.distanceKm ?? '?';
+  const bike = r.gearId ? state.gear.find(b => b.id === r.gearId) : null;
   row.innerHTML = `
     ${reorder ? `<div class="reorder-col">
       <button type="button" class="btn reorder-btn" data-act="up" ${reorder.canUp ? '' : 'disabled'} title="Move up">↑</button>
@@ -1134,7 +1163,7 @@ function makeRouteRow(r, reorder) {
     <span class="route-row-emoji">${ACTIVITY_EMOJI[r.type] || '✦'}</span>
     <div class="route-row-info">
       <div class="route-row-name">${esc(r.name)}</div>
-      <div class="route-row-meta">${km} km${r.groupName ? ' · ' + esc(r.groupName) : ''}</div>
+      <div class="route-row-meta">${km} km${r.groupName ? ' · ' + esc(r.groupName) : ''}${bike ? ' · 🚲 ' + esc(bike.name) : ''}</div>
     </div>
     <div class="route-row-actions">
       <button type="button" class="btn btn-small" data-act="edit">Edit</button>
