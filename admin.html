@@ -113,6 +113,21 @@
     .collection-row-info { flex: 1; min-width: 0; }
     .collection-row-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .collection-row-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .collection-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .collection-edit-form { padding: 10px 4px 16px; border-bottom: 1px solid var(--border); }
+    .collection-edit-form .field { margin-bottom: 10px; }
+    .collection-edit-form .btn-row { margin-top: 4px; }
+
+    .bulk-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--border); }
+    .bulk-row:last-child { border-bottom: none; }
+    .bulk-row-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+    .bulk-row-filename { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bulk-row-fields { display: flex; gap: 8px; }
+    .bulk-row-fields input[type=text] { flex: 1; min-width: 0; }
+    .bulk-row-fields select { width: 128px; flex-shrink: 0; }
+    .bulk-row-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); }
+    .bulk-row-error { color: var(--danger); font-size: 11.5px; }
+    .bulk-row-remove { flex-shrink: 0; margin-top: 1px; }
 
     @media (max-width: 560px) {
       .row { flex-direction: column; gap: 0; }
@@ -235,6 +250,55 @@
     </form>
   </section>
 
+  <section class="card" id="bulkCard" style="display:none">
+    <h2>Bulk upload routes</h2>
+    <p class="sub">Drop several GPX files at once. They're all added to the same collection (or left standalone) in one commit — rename, describe, reorder, or move them individually afterward from "Existing routes" below.</p>
+
+    <div class="field">
+      <div class="drop-zone" id="bulkDropZone">
+        <input type="file" id="bulkFileInput" accept=".gpx" multiple />
+        <div id="bulkDropLabel">📂 Drop .gpx files here or <u>browse</u> (multiple allowed)</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="bulkGroupSelect">Collection</label>
+        <select id="bulkGroupSelect">
+          <option value="">— No collection (standalone) —</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="bulkTypeSelect">Default activity</label>
+        <select id="bulkTypeSelect">
+          <option value="bike">🚴 Bike</option>
+          <option value="hike">🥾 Hike</option>
+          <option value="kayak">🛶 Kayak</option>
+          <option value="run">🏃 Run</option>
+          <option value="other">✦ Other</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="bulkNewGroupFields" style="display:none">
+      <div class="field">
+        <label for="bulkNewGroupName">New collection name</label>
+        <input type="text" id="bulkNewGroupName" placeholder="e.g. EuroVelo 1" />
+      </div>
+      <div class="field">
+        <label for="bulkNewGroupDesc">New collection description</label>
+        <textarea id="bulkNewGroupDesc" placeholder="A short blurb shown above the routes in this collection"></textarea>
+      </div>
+    </div>
+
+    <div id="bulkList"><div class="routes-empty">No files added yet.</div></div>
+
+    <div class="btn-row">
+      <button type="button" class="btn btn-accent btn-block" id="bulkCommitBtn" disabled>Commit routes</button>
+      <button type="button" class="btn" id="bulkClearBtn" style="display:none">Clear</button>
+    </div>
+  </section>
+
   <section class="card" id="logCard" style="display:none">
     <h2>Progress</h2>
     <div class="log" id="logLines"></div>
@@ -242,7 +306,7 @@
 
   <section class="card" id="collectionsCard" style="display:none">
     <h2>Collections</h2>
-    <p class="sub">The order here is the order collections appear on the map. Use the arrows to reorder.</p>
+    <p class="sub">The order here is the order collections appear on the map. Use the arrows to reorder, or Edit to rename or update the description.</p>
     <div id="collectionsList"><div class="routes-empty">No collections yet — add one from the form above.</div></div>
   </section>
 
