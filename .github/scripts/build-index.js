@@ -298,6 +298,10 @@ async function main() {
       photos:      existingMap[id]?.photos || [],
       addedAt:     existingMap[id]?.addedAt || new Date().toISOString(),
       metrics,
+      // Which bike this was ridden on (set via the admin portal) — not
+      // derivable from the GPX or folder structure, so it only ever comes
+      // from the existing index.json and must survive a rebuild.
+      gearId:      existingMap[id]?.gearId || null,
     });
   }
 

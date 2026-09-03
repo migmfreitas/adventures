@@ -139,6 +139,7 @@
 <header>
   <a class="back-btn" href="index.html">← Map</a>
   <div class="logo">adventure<span class="dot">.</span>log<span class="admin-tag">admin</span></div>
+  <a class="back-btn" href="gear.html" style="margin-left:auto">🚲 Gear</a>
 </header>
 
 <div class="page">
@@ -215,6 +216,13 @@
         </div>
       </div>
 
+      <div class="field">
+        <label for="gearSelect">Bike <span style="text-transform:none">(optional — tracks distance on the gear page)</span></label>
+        <select id="gearSelect">
+          <option value="">— No bike —</option>
+        </select>
+      </div>
+
       <div id="newGroupFields">
         <div class="field">
           <label for="newGroupName">New collection name</label>
@@ -280,6 +288,13 @@
       </div>
     </div>
 
+    <div class="field">
+      <label for="bulkGearSelect">Bike <span style="text-transform:none">(optional — applied to all files in this batch)</span></label>
+      <select id="bulkGearSelect">
+        <option value="">— No bike —</option>
+      </select>
+    </div>
+
     <div id="bulkNewGroupFields" style="display:none">
       <div class="field">
         <label for="bulkNewGroupName">New collection name</label>
@@ -323,6 +338,6 @@
 </div>
 
 <script src="js/gpx-parser.js?v=1"></script>
-<script src="js/admin.js?v=1"></script>
+<script src="js/admin.js?v=2"></script>
 </body>
 </html>

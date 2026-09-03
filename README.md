@@ -76,6 +76,34 @@ auto-generated, so per-route `description`/`photos` are the only fields
 
 ---
 
+## Gear page
+
+**[`gear.html`](gear.html)** lists your bikes — brand, model, frame,
+groupset, wheels, tires, size, purchase date, notes — each with its own
+maintenance log (service, repairs, part replacements, tires, cleaning;
+with an optional mileage and cost per entry).
+
+Manage it from **[`gear-admin.html`](gear-admin.html)**, a portal in the
+same spirit as the routes admin: connect with a GitHub personal access
+token (the same one used for `admin.html` — the token is shared, so
+connecting once on either page covers both), add or edit a bike, and log
+maintenance against it. Every change is a single commit straight to
+`data/gear.json`, live on the gear page in about 60 seconds.
+
+### Tracking distance per bike
+
+A route can be tagged with the bike it was ridden on: pick one from the
+**Bike** field when adding or editing a route in `admin.html` (or once for
+a whole batch in the bulk-upload form) — it's stored as `gearId` on the
+route's `data/index.json` entry. The gear page then sums that up
+automatically: each bike shows its ride count, total distance, and distance
+since its last maintenance log entry, plus a list of the actual rides
+(linking back to `route.html`). No manual mileage tracking required —
+log a service, keep tagging your rides, and "since last service" stays
+accurate on its own.
+
+---
+
 ## Deploy to GitHub Pages
 
 1. Create a repo on GitHub (e.g. `adventures`)
@@ -110,14 +138,19 @@ data/
   collections.json      ← multi-day collection names, descriptions, ordering
   gpx/                  ← GPX files, organized data/gpx/<type>/[<collection>|ungrouped]/
   images/                ← photos uploaded via the admin portal, data/images/<route-id>/
+  gear.json              ← bikes and their maintenance logs, edited via gear-admin.html
 js/
   gpx-parser.js         ← browser-side GPX parser (route page + admin portal)
   store.js              ← fetches data/index.json and data/gpx/*.gpx
   app.js                ← map, sidebar, filters
   admin.js               ← admin portal logic (commits via the GitHub API)
+  gear.js                ← gear page rendering (reads data/gear.json)
+  gear-admin.js           ← gear admin portal logic (commits data/gear.json via the GitHub API)
 index.html              ← overview map
 route.html              ← individual route: metrics, elevation profile, full map, description/photos
 admin.html              ← admin portal: add routes with descriptions and photos
+gear.html               ← bike details and maintenance logs
+gear-admin.html         ← gear admin portal: add/edit bikes, log maintenance
 .nojekyll               ← disables Jekyll on GitHub Pages
 ```
 
