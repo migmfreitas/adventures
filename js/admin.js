@@ -13,6 +13,12 @@
  * commit message starts with "Add route:" since this page already wrote the
  * up-to-date index; edits/deletes still trigger the Action (their gpx paths
  * change), but the rebuild is a no-op because the index already matches.
+ *
+ * admin.html loads this file (and gpx-parser.js) with a `?v=N` cache-busting
+ * query string — bump it whenever either file changes, or returning visitors
+ * can keep running a stale cached copy indefinitely and silently miss new
+ * features (this bit us once: admin.html had no versioning at all through
+ * several rounds of add/edit/delete/reorder work).
  */
 
 const OWNER = 'migmfreitas';
@@ -255,6 +261,7 @@ async function connect(token) {
   $('collectionsCard').style.display = '';
   await loadCollections();
   await loadGear();
+  $('loadRoutesBtn').click();
 }
 function disconnect() {
   state.token = '';
@@ -290,10 +297,37 @@ $('connectBtn').addEventListener('click', async () => {
 });
 $('disconnectBtn').addEventListener('click', disconnect);
 
+/**
+ * Folders under data/gpx/ can pick up routes without ever going through the
+ * admin portal's "add route" form (a direct commit, or a bulk-add without a
+ * new-collection entry) — the only place that writes collections.json. When
+ * that happens, build-index.js still groups those routes fine (it derives
+ * groupName from the folder name), but collections.json never learns about
+ * the folder — so without this, the collection is invisible here even
+ * though its routes appear correctly under "Existing routes" and on the
+ * live map. Synthesize a placeholder entry for any such orphan group so it
+ * always shows up and can be adopted into collections.json via Edit → Save.
+ */
+function mergeOrphanCollections(collections, indexEntries) {
+  const known = new Set(collections.map(c => collectionKey(c.folder)));
+  const orphans = new Map();
+  for (const e of indexEntries) {
+    if (!e.group) continue;
+    const key = collectionKey(e.group);
+    if (known.has(key) || orphans.has(key)) continue;
+    orphans.set(key, { folder: e.group, name: e.groupName || e.group, description: '', orphan: true });
+  }
+  return [...collections, ...orphans.values()];
+}
+
 async function loadCollections() {
   try {
     const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
-    state.collections = await fetchRawJson('data/collections.json', ref.object.sha, []);
+    const [collections, indexEntries] = await Promise.all([
+      fetchRawJson('data/collections.json', ref.object.sha, []),
+      fetchRawJson('data/index.json', ref.object.sha, []),
+    ]);
+    state.collections = mergeOrphanCollections(collections, indexEntries);
   } catch (e) {
     state.collections = [];
   }
@@ -766,7 +800,10 @@ function renderCollectionsList() {
       return;
     }
     const count = state.routesIndex ? state.routesIndex.filter(r => r.group === c.folder).length : null;
-    const canUp = i > 0, canDown = i < state.collections.length - 1;
+    const canUp = !c.orphan && i > 0, canDown = !c.orphan && i < state.collections.length - 1;
+    const meta = c.orphan
+      ? '⚠ not in collections.json yet — click Edit to add it'
+      : (count !== null ? count + ' route' + (count === 1 ? '' : 's') : esc(c.folder));
     const row = document.createElement('div');
     row.className = 'collection-row';
     row.innerHTML = `
@@ -776,7 +813,7 @@ function renderCollectionsList() {
       </div>
       <div class="collection-row-info">
         <div class="collection-row-name">${esc(c.name)}</div>
-        <div class="collection-row-meta">${count !== null ? count + ' route' + (count === 1 ? '' : 's') : esc(c.folder)}</div>
+        <div class="collection-row-meta">${meta}</div>
       </div>
       <div class="collection-row-actions">
         <button type="button" class="btn btn-small" data-act="edit">Edit</button>
@@ -837,10 +874,14 @@ async function saveCollectionEdit(folder, name, description) {
       fetchRawJson('data/collections.json', latestCommitSha, []),
     ]);
     const idx = collections.findIndex(c => c.folder === folder);
-    if (idx === -1) throw new Error('Collection no longer exists — reload and try again.');
-
     const updatedCollections = [...collections];
-    updatedCollections[idx] = { ...updatedCollections[idx], name, description };
+    if (idx === -1) {
+      // Orphan collection (routes exist under this folder in index.json but
+      // it was never written to collections.json) — adopt it now.
+      updatedCollections.push({ folder, name, description });
+    } else {
+      updatedCollections[idx] = { ...updatedCollections[idx], name, description };
+    }
 
     // groupName is denormalized onto every entry in index.json (so route.html
     // and the map don't need to cross-reference collections.json), so a
