@@ -132,6 +132,15 @@
     @media (max-width: 560px) {
       .row { flex-direction: column; gap: 0; }
     }
+
+    .order-save-bar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 200;
+      display: none; align-items: center; justify-content: center; gap: 16px;
+      background: var(--surface); border-top: 1px solid var(--accent);
+      padding: 12px 20px; box-shadow: 0 -4px 16px rgba(0,0,0,.35);
+    }
+    .order-save-bar span { font-size: 12.5px; }
+    .order-save-bar .btn-group { display: flex; gap: 8px; }
   </style>
 </head>
 <body>
@@ -321,13 +330,13 @@
 
   <section class="card" id="collectionsCard" style="display:none">
     <h2>Collections</h2>
-    <p class="sub">The order here is the order collections appear on the map. Use the arrows to reorder, or Edit to rename or update the description.</p>
+    <p class="sub">The order here is the order collections appear on the map. Use the arrows to rearrange as many as you like, then click "Save order" below — or Edit to rename or update the description (which saves immediately).</p>
     <div id="collectionsList"><div class="routes-empty">No collections yet — add one from the form above.</div></div>
   </section>
 
   <section class="card" id="routesCard" style="display:none">
     <h2>Existing routes</h2>
-    <p class="sub">Edit or delete a route already on the map. Grouped routes can be reordered with the arrows; search to filter (reordering is disabled while filtering).</p>
+    <p class="sub">Edit or delete a route already on the map. Grouped routes can be reordered with the arrows — rearrange as many as you like, then click "Save order" below; search to filter (reordering is disabled while filtering).</p>
     <div class="routes-toolbar">
       <input type="text" id="routesSearch" placeholder="Filter by name…" />
       <button class="btn btn-small" id="loadRoutesBtn">↻ Load</button>
@@ -337,7 +346,15 @@
 
 </div>
 
+<div class="order-save-bar" id="orderSaveBar">
+  <span>You have unsaved order changes.</span>
+  <div class="btn-group">
+    <button type="button" class="btn" id="discardOrderBtn">Discard</button>
+    <button type="button" class="btn btn-accent" id="saveOrderBtn">Save order</button>
+  </div>
+</div>
+
 <script src="js/gpx-parser.js?v=1"></script>
-<script src="js/admin.js?v=2"></script>
+<script src="js/admin.js?v=3"></script>
 </body>
 </html>

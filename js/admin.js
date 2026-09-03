@@ -39,7 +39,8 @@ const state = {
   removedPhotos: [],    // existing photo paths marked for removal while editing
   routesIndex: null,   // cached data/index.json, loaded lazily for the browser
   treeCache: null,      // { commitSha, map: Map<path, blobSha> }
-  reordering: false,    // true while a reorder commit is in flight (disables the arrows)
+  reordering: false,    // true while a batched order commit is in flight (disables the arrows)
+  orderDirty: false,    // true once the arrows have made local changes not yet pushed to GitHub
   editingCollectionFolder: null, // folder of the collection whose name/description form is open, or null
   bulkFiles: [],        // { file, text, parsed, name, type, error } — staged for the bulk-upload commit
   bulkCommitting: false, // true while a bulk commit is in flight (disables the commit button)
@@ -794,13 +795,18 @@ function renderCollectionsList() {
   list.style.opacity = state.reordering ? '.5' : '';
   list.style.pointerEvents = state.reordering ? 'none' : '';
   list.innerHTML = '';
+  // Orphans (see mergeOrphanCollections) always sit after every real
+  // collection, so the last real one must never offer "down" — that would
+  // swap it into the orphan block, which moveCollectionOrder assumes can't
+  // happen since only real collections are ever reorderable.
+  const lastRealIdx = state.collections.reduce((last, cc, ii) => cc.orphan ? last : ii, -1);
   state.collections.forEach((c, i) => {
     if (state.editingCollectionFolder === c.folder) {
       list.appendChild(makeCollectionEditForm(c));
       return;
     }
     const count = state.routesIndex ? state.routesIndex.filter(r => r.group === c.folder).length : null;
-    const canUp = !c.orphan && i > 0, canDown = !c.orphan && i < state.collections.length - 1;
+    const canUp = !c.orphan && i > 0, canDown = !c.orphan && i < lastRealIdx;
     const meta = c.orphan
       ? '⚠ not in collections.json yet — click Edit to add it'
       : (count !== null ? count + ' route' + (count === 1 ? '' : 's') : esc(c.folder));
@@ -917,52 +923,19 @@ async function saveCollectionEdit(folder, name, description) {
   }
 }
 
-async function moveCollectionOrder(folder, direction) {
+// Swaps two collections in place, locally — no network call. The arrows can
+// be clicked repeatedly to rearrange the whole list; nothing is pushed to
+// GitHub until "Save order" is clicked (see saveOrderChanges below).
+function moveCollectionOrder(folder, direction) {
   if (state.reordering) return;
-  state.reordering = true;
+  const idx = state.collections.findIndex(c => c.folder === folder);
+  const swapIdx = idx + direction;
+  if (idx === -1 || swapIdx < 0 || swapIdx >= state.collections.length) return;
+  [state.collections[idx], state.collections[swapIdx]] = [state.collections[swapIdx], state.collections[idx]];
+  state.orderDirty = true;
   renderCollectionsList();
   renderRoutesList();
-  clearLog();
-  try {
-    logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
-    const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
-    const latestCommitSha = ref.object.sha;
-
-    const [indexEntries, collections] = await Promise.all([
-      fetchRawJson('data/index.json', latestCommitSha, []),
-      fetchRawJson('data/collections.json', latestCommitSha, []),
-    ]);
-    const idx = collections.findIndex(c => c.folder === folder);
-    const swapIdx = idx + direction;
-    if (idx === -1 || swapIdx < 0 || swapIdx >= collections.length) {
-      logLine('Nothing to do — reload and try again.');
-      return;
-    }
-    const reordered = [...collections];
-    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
-
-    const sortedEntries = resortIndex(indexEntries, reordered);
-    logLine(`Uploading reordered collections…`);
-    await writeCommit({
-      message: `Reorder collection: ${reordered[idx].name || folder}`,
-      latestCommitSha,
-      adds: [
-        { path: 'data/index.json', content: JSON.stringify(sortedEntries, null, 2), encoding: 'utf-8' },
-        { path: 'data/collections.json', content: JSON.stringify(reordered, null, 2), encoding: 'utf-8' },
-      ],
-      deletes: [],
-    });
-
-    state.collections = reordered;
-    state.routesIndex = sortedEntries;
-    logLine('<b>Reordered.</b>', false, true);
-  } catch (err) {
-    logLine('✗ ' + esc(err.message), true);
-  } finally {
-    state.reordering = false;
-    renderCollectionsList();
-    renderRoutesList();
-  }
+  updateOrderBar();
 }
 
 // ── Bulk upload ───────────────────────────────────────────────────────────────
@@ -1285,53 +1258,112 @@ function renderRoutesList() {
   }
 }
 
-async function moveRouteOrder(entry, direction) {
+// Swaps two sibling routes' `order` values in place, locally — no network
+// call. Like moveCollectionOrder, this only stages the change; "Save order"
+// pushes everything staged (collections + routes) as one commit.
+function moveRouteOrder(entry, direction) {
   if (state.reordering) return;
-  state.reordering = true;
+  const current = state.routesIndex.find(en => en.id === entry.id);
+  if (!current || !current.group) return;
+
+  const siblings = state.routesIndex
+    .filter(en => en.group === current.group)
+    .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+  const idx = siblings.findIndex(en => en.id === current.id);
+  const swapIdx = idx + direction;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return;
+  const other = siblings[swapIdx];
+  const tmp = current.order; current.order = other.order; other.order = tmp;
+
+  state.orderDirty = true;
   renderRoutesList();
+  updateOrderBar();
+}
+
+// ── Batched order save ───────────────────────────────────────────────────────
+// The reorder arrows above only rearrange state.collections/state.routesIndex
+// in memory. This pushes everything staged as a single commit: it re-fetches
+// the current index.json/collections.json (in case something else changed
+// meanwhile, e.g. a route added from another tab) and re-applies the local
+// order on top, rather than overwriting with a possibly-stale full snapshot.
+function updateOrderBar() {
+  const bar = $('orderSaveBar');
+  if (!bar) return;
+  bar.style.display = state.orderDirty ? 'flex' : 'none';
+  $('saveOrderBtn').disabled = state.reordering;
+  $('discardOrderBtn').disabled = state.reordering;
+  $('saveOrderBtn').textContent = state.reordering ? 'Saving…' : 'Save order';
+}
+
+async function saveOrderChanges() {
+  if (state.reordering || !state.orderDirty) return;
+  state.reordering = true;
+  renderCollectionsList();
+  renderRoutesList();
+  updateOrderBar();
   clearLog();
   try {
     logLine('Resolving latest commit on <b>' + esc(state.defaultBranch) + '</b>…');
     const ref = await gh(`/repos/${OWNER}/${REPO}/git/refs/heads/${state.defaultBranch}`);
     const latestCommitSha = ref.object.sha;
 
-    const [indexEntries, collections] = await Promise.all([
+    const [freshIndex, freshCollections] = await Promise.all([
       fetchRawJson('data/index.json', latestCommitSha, []),
       fetchRawJson('data/collections.json', latestCommitSha, []),
     ]);
-    const current = indexEntries.find(en => en.id === entry.id);
-    if (!current || !current.group) throw new Error('This route no longer exists or is no longer grouped — reload the list.');
 
-    const siblings = indexEntries
-      .filter(en => en.group === current.group)
-      .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
-    const idx = siblings.findIndex(en => en.id === current.id);
-    const swapIdx = idx + direction;
-    if (swapIdx < 0 || swapIdx >= siblings.length) {
-      logLine('Nothing to do — reload and try again.');
-      return;
-    }
-    const other = siblings[swapIdx];
-    const tmp = current.order; current.order = other.order; other.order = tmp;
+    const collectionOrder = new Map(state.collections.map((c, i) => [collectionKey(c.folder), i]));
+    const mergedCollections = [...freshCollections].sort((a, b) =>
+      (collectionOrder.get(collectionKey(a.folder)) ?? Infinity) - (collectionOrder.get(collectionKey(b.folder)) ?? Infinity));
 
-    const sorted = resortIndex(indexEntries, collections);
-    logLine('Uploading reordered index…');
+    const routeOrder = new Map((state.routesIndex || []).map(e => [e.id, e.order]));
+    const mergedIndex = freshIndex.map(e =>
+      routeOrder.has(e.id) && routeOrder.get(e.id) !== undefined ? { ...e, order: routeOrder.get(e.id) } : e);
+
+    const sortedEntries = resortIndex(mergedIndex, mergedCollections);
+    logLine('Uploading reordered index and collections…');
     await writeCommit({
-      message: `Reorder: ${current.name}`,
+      message: 'Reorder routes/collections',
       latestCommitSha,
-      adds: [{ path: 'data/index.json', content: JSON.stringify(sorted, null, 2), encoding: 'utf-8' }],
+      adds: [
+        { path: 'data/index.json', content: JSON.stringify(sortedEntries, null, 2), encoding: 'utf-8' },
+        { path: 'data/collections.json', content: JSON.stringify(mergedCollections, null, 2), encoding: 'utf-8' },
+      ],
       deletes: [],
     });
 
-    state.routesIndex = sorted;
-    logLine(`<b>Reordered "${esc(current.name)}".</b>`, false, true);
+    state.collections = mergeOrphanCollections(mergedCollections, sortedEntries);
+    state.routesIndex = sortedEntries;
+    state.orderDirty = false;
+    logLine('<b>Order saved.</b>', false, true);
   } catch (err) {
     logLine('✗ ' + esc(err.message), true);
   } finally {
     state.reordering = false;
+    renderCollectionsList();
     renderRoutesList();
+    updateOrderBar();
   }
 }
+
+async function discardOrderChanges() {
+  if (state.reordering) return;
+  clearLog();
+  await loadCollections();
+  if (state.routesIndex !== null) {
+    state.routesIndex = await fetchRawJson('data/index.json', state.defaultBranch, []);
+  }
+  state.orderDirty = false;
+  renderCollectionsList();
+  renderRoutesList();
+  updateOrderBar();
+}
+
+$('saveOrderBtn').addEventListener('click', saveOrderChanges);
+$('discardOrderBtn').addEventListener('click', discardOrderChanges);
+window.addEventListener('beforeunload', e => {
+  if (state.orderDirty) { e.preventDefault(); e.returnValue = ''; }
+});
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 (async () => {
