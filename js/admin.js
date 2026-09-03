@@ -13,6 +13,12 @@
  * commit message starts with "Add route:" since this page already wrote the
  * up-to-date index; edits/deletes still trigger the Action (their gpx paths
  * change), but the rebuild is a no-op because the index already matches.
+ *
+ * admin.html loads this file (and gpx-parser.js) with a `?v=N` cache-busting
+ * query string — bump it whenever either file changes, or returning visitors
+ * can keep running a stale cached copy indefinitely and silently miss new
+ * features (this bit us once: admin.html had no versioning at all through
+ * several rounds of add/edit/delete/reorder work).
  */
 
 const OWNER = 'migmfreitas';
@@ -253,6 +259,7 @@ async function connect(token) {
   $('routesCard').style.display = '';
   $('collectionsCard').style.display = '';
   await loadCollections();
+  $('loadRoutesBtn').click();
 }
 function disconnect() {
   state.token = '';
