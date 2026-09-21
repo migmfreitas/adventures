@@ -1,1 +1,19 @@
-[]
+[
+  {
+    "id": "adventure-900",
+    "name": "Adventure 900",
+    "type": "road",
+    "brand": "Riverside",
+    "model": "Advt 900",
+    "year": 2026,
+    "size": "",
+    "purchaseDate": null,
+    "frame": "",
+    "groupset": "",
+    "wheels": "",
+    "tires": "",
+    "notes": "",
+    "addedAt": "2026-09-21T16:51:05.894Z",
+    "maintenanceLog": []
+  }
+]
